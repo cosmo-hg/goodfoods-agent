@@ -1,0 +1,36 @@
+# Environment
+.env
+*.env
+
+# Database
+data/goodfoods.db
+data/*.db
+
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+dist/
+build/
+.eggs/
+
+# Virtual environments
+venv/
+.venv/
+env/
+
+# Testing
+.pytest_cache/
+.coverage
+htmlcov/
+
+# IDE
+.idea/
+.vscode/
+*.swp
+
+# macOS
+.DS_Store
+
+# Streamlit — only ignore secrets, commit config.toml
+.streamlit/secrets.toml
