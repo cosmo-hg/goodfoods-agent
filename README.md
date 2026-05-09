@@ -22,18 +22,6 @@ From natural-language intent to confirmed booking in under 90 seconds, zero huma
 
 > 📹 **[Watch the full demo → https://www.loom.com/share/6e4135a8c59b4ec28db33910f3195b66]**
 
-The demo covers five complete user journeys end-to-end:
-
-| # | Journey | Timestamp |
-|---|---------|-----------|
-| — | Project overview and architecture walkthrough | 0:00–1:30 |
-| 1 | "Find me Italian food in Downtown for 4 this Saturday" | 1:30–3:45 |
-| 2 | Returning guest recognition and one-click re-booking | 3:45–5:30 |
-| 3 | Anniversary dinner with automatic experience package | 5:30–7:15 |
-| 4 | Corporate account (B2B) dinner under Apex Consulting | 7:15–8:45 |
-| 5 | Modify then cancel a booking | 8:45–10:00 |
-| 6 | Live Dashboard and Admin analytics walkthrough | 10:00–11:30 |
-
 ---
 
 ## Setup Instructions
@@ -46,7 +34,7 @@ The demo covers five complete user journeys end-to-end:
 ### 1 — Clone and install
 
 ```bash
-git clone https://github.com/YOUR_USERNAME/goodfoods-agent.git
+git clone https://github.com/cosmo-hg/goodfoods-agent.git
 cd goodfoods-agent
 pip install -r requirements.txt
 ```
@@ -482,20 +470,6 @@ This is not a chatbot. It is GoodFoods' **primary customer relationship layer** 
 3. **Competitor mentions from natural language.** "Something like Social" is competitive benchmarking captured at scale, automatically, at zero cost.
 4. **Occasion CRM without a CRM team.** A cron job + DB lookup re-engages customers 364 days later with perfect personalisation.
 5. **Missed booking re-engagement.** Drop-off users notified within 90 minutes of a slot opening — consistent with e-commerce intent-decay patterns.
-
-### Conservative Monthly ROI (50 branches, 1,000 bookings/day, ₹1,200 avg cover)
-
-| Revenue Driver | Monthly Uplift |
-|---------------|---------------|
-| No-show reduction (18% → 10%, ~25% slot refill assumed) | ₹7.2 lakh |
-| Missed booking re-engagement (5% conversion) | ₹18 lakh |
-| Experience packaging (5% attach, ₹800 add-on) | ₹24 lakh |
-| Staff time savings (1,200 hrs @ ₹200/hr) | ₹2.4 lakh |
-| Food waste reduction (est. 8-12% of ₹2Cr food cost) | ₹20 lakh |
-| Platform commission savings (no 7.5-10% Dineout cut) | ₹14.4 lakh |
-| **TOTAL** | **~₹86 lakh / month** |
-
-Payback period: **6-8 months** after full deployment across all 50 branches (per the 16-week phased rollout).
 
 ### Competitive Advantages
 
