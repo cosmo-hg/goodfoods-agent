@@ -234,8 +234,18 @@ def run_agent(
                         if isinstance(tc.function.arguments, str)
                         else tc.function.arguments
                     )
-                except json.JSONDecodeError:
-                    args = {}
+                except json.JSONDecodeError as e:
+                    # Surface the parse failure as a tool result so the model
+                    # knows what went wrong instead of silently receiving {}.
+                    history.append({
+                        "role":         "tool",
+                        "tool_call_id": tc.id,
+                        "content":      json.dumps({
+                            "error": f"Tool arguments could not be parsed as JSON: {e}. "
+                                     "Please retry with valid JSON arguments."
+                        }),
+                    })
+                    continue
 
                 result_str = mcp.call_tool(tc.function.name, args)
 

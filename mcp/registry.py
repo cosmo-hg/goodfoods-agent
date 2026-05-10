@@ -240,12 +240,17 @@ def create_experience_package(**kwargs):
 
 @server.tool(
     name="get_corporate_account",
-    description="Look up a corporate account by code or company name for business bookings.",
+    description=(
+        "Look up a corporate account by code or company name for business bookings. "
+        "You MUST provide at least one of account_code or company_name — "
+        "calling with no arguments returns nothing. Ask the guest for their "
+        "company name or account code before calling this tool."
+    ),
     input_schema={
         "type": "object",
         "properties": {
-            "account_code": {"type": "string"},
-            "company_name": {"type": "string"},
+            "account_code": {"type": "string", "description": "Corporate account code (e.g. CORP-001)"},
+            "company_name": {"type": "string", "description": "Full company name as registered"},
         },
         "required": [],
     },

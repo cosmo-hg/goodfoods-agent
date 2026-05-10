@@ -76,7 +76,7 @@ def compress_history(history, keep=_KEEP_RECENT):
 
         if role == "tool":
             content = msg.get("content") or ""
-            snippet = str(content)[:120].replace("\n", " ")
+            snippet = str(content)[:400].replace("\n", " ")
             if snippet:
                 lines.append(f"[tool result]: {snippet}…")
             continue
@@ -91,6 +91,7 @@ def compress_history(history, keep=_KEEP_RECENT):
             lines.append(f"[{role}]: {snippet}")
 
     summary = (
+        "[SYSTEM NOTE — conversation summary, not a guest message]\n"
         "CONVERSATION SUMMARY (compressed earlier messages):\n"
         + "\n".join(lines)
     )
