@@ -95,7 +95,7 @@ goodfoods-agent/
 │
 ├── agent/
 │   ├── loop.py               # Agentic loop — LLM calls + tool execution + key rotation
-│   ├── prompts.py            # System prompt for Sage (intent-first, tool-first design)
+│   ├── prompts.py            # System prompt for Sage (semantic intent labels: BROWSE/BOOKING/MENU/MANAGE/GREET)
 │   └── history.py            # Sliding-window conversation compressor
 │
 ├── mcp/
@@ -218,7 +218,7 @@ goodfoods-agent/
 Sage's system prompt is built on three principles:
 
 **1. Intent-first, not keyword-matching.**
-The prompt gives the LLM a concrete decision tree (A=Browse, B=Book, C=Info, D=Manage, E=Greet) and instructs it to classify intent before acting. This eliminates "What are you in the mood for?" responses — when a search would serve the user better, the LLM calls `search_branches` immediately.
+The prompt gives the LLM a concrete decision tree with semantic labels (`BROWSE`, `BOOKING`, `MENU`, `MANAGE`, `GREET`) and requires it to state the intent word explicitly before acting. Semantic labels outperform arbitrary letters (A/B/C) because the words carry meaning from training data — `BOOKING` activates everything the model knows about reservations, reducing classification drift. The explicit output step ("Intent: BROWSE → …") also makes every decision traceable in logs. This eliminates "What are you in the mood for?" responses — when a search would serve the user better, the LLM calls `search_branches` immediately.
 
 **2. Tool-first, never invent.**
 Every factual response must go through a tool call. The prompt contains an explicit hard rule: *"Never invent branch details, menus, or availability — always use tools."* Combined with `TEMPERATURE=0.3`, this virtually eliminates hallucination on restaurant-specific data.
@@ -232,7 +232,7 @@ The prompt collects only what is needed at the right moment. Email is requested 
 |---------|---------|
 | Identity & Scope | Sage, GoodFoods only, NYC — anchors the model |
 | Voice & Tone | Warm, specific, decisive; cite real data from tools |
-| Intent Decision Tree | A/B/C/D/E classification + immediate action per intent |
+| Intent Decision Tree | Semantic label (BROWSE/BOOKING/MENU/MANAGE/GREET) stated explicitly before acting |
 | Email & Profile Timing | Collect only when booking-ready, not on greeting |
 | Search Flow | `search_branches` first, present all results with specifics |
 | Booking Workflow | 7-step checklist + mandatory pre-booking summary |
