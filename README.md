@@ -22,6 +22,19 @@ From natural-language intent to confirmed booking in under 90 seconds, zero huma
 
 > 📹 **[Watch the full demo → https://www.loom.com/share/6e4135a8c59b4ec28db33910f3195b66]**
 
+### What you see in the demo vs. what a real user sees
+
+The live app and demo expose **all four tabs** for evaluation purposes:
+
+| Tab | What it is | Who sees it in production |
+|-----|-----------|--------------------------|
+| **Concierge** | The guest-facing AI chat | ✅ Every customer |
+| **Locations** | Browse all 75 branches on a map | ✅ Every customer |
+| **Dashboard** | Live booking analytics, revenue KPIs, demand signals | 🔒 Restaurant management only |
+| **Admin** | Search failures, competitor mentions, occasion CRM pipeline | 🔒 Internal operations team only |
+
+In a real deployment the **Dashboard** and **Admin** tabs would sit behind staff authentication and never be visible to guests. They are surfaced here so reviewers can inspect the full intelligence layer — demand signals, competitor tracking, and occasion CRM — without needing database access.
+
 ---
 
 ## Setup Instructions
@@ -218,7 +231,7 @@ goodfoods-agent/
 Sage's system prompt is built on three principles:
 
 **1. Intent-first, not keyword-matching.**
-The prompt gives the LLM a concrete decision tree with semantic labels (`BROWSE`, `BOOKING`, `MENU`, `MANAGE`, `GREET`) and requires it to state the intent word explicitly before acting. Semantic labels outperform arbitrary letters (A/B/C) because the words carry meaning from training data — `BOOKING` activates everything the model knows about reservations, reducing classification drift. The explicit output step ("Intent: BROWSE → …") also makes every decision traceable in logs. This eliminates "What are you in the mood for?" responses — when a search would serve the user better, the LLM calls `search_branches` immediately.
+The prompt gives the LLM a decision tree with five semantic labels — `BROWSE`, `BOOKING`, `MENU`, `MANAGE`, `GREET` — and instructs it to silently identify the guest's intent before choosing an action. Each label is a meaningful word, not an arbitrary symbol, so it carries weight from the model's training: seeing `BOOKING` activates everything the model knows about reservations, dates, party sizes, and confirmation flows — reducing classification drift under long or ambiguous conversations. The model resolves intent privately and acts immediately, which eliminates filler responses like "What are you in the mood for?" — when a search would serve the guest better, the model calls `search_branches` without prompting.
 
 **2. Tool-first, never invent.**
 Every factual response must go through a tool call. The prompt contains an explicit hard rule: *"Never invent branch details, menus, or availability — always use tools."* Combined with `TEMPERATURE=0.3`, this virtually eliminates hallucination on restaurant-specific data.
@@ -232,7 +245,7 @@ The prompt collects only what is needed at the right moment. Email is requested 
 |---------|---------|
 | Identity & Scope | Sage, GoodFoods only, NYC — anchors the model |
 | Voice & Tone | Warm, specific, decisive; cite real data from tools |
-| Intent Decision Tree | Semantic label (BROWSE/BOOKING/MENU/MANAGE/GREET) stated explicitly before acting |
+| Intent Decision Tree | Semantic label (BROWSE/BOOKING/MENU/MANAGE/GREET) resolved silently; model acts immediately |
 | Email & Profile Timing | Collect only when booking-ready, not on greeting |
 | Search Flow | `search_branches` first, present all results with specifics |
 | Booking Workflow | 7-step checklist + mandatory pre-booking summary |
