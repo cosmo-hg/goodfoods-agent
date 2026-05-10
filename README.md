@@ -42,7 +42,7 @@ In a real deployment the **Dashboard** and **Admin** tabs would sit behind staff
 ### Prerequisites
 
 - Python 3.9+
-- A free [Groq API key](https://console.groq.com/) (llama-3.1-8b-instant, free tier is sufficient)
+- A free [Groq API key](https://console.groq.com/) (llama-3.1-8b-instant)
 
 ### 1 — Clone and install
 
