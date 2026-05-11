@@ -19,7 +19,7 @@ import datetime as _dt
 
 from openai import OpenAI, RateLimitError
 
-from config import GROQ_API_KEYS, GROQ_BASE_URL, MODEL, TEMPERATURE
+from config import GROQ_API_KEYS, GROQ_BASE_URL, MODEL, TEMPERATURE, log_agent_trace
 from agent.prompts import SYSTEM_PROMPT
 from agent.history import compress_history, _COMPRESS_TRIGGER
 from mcp.registry import get_mcp_client
@@ -162,6 +162,10 @@ def run_agent(
     """
     mcp = get_mcp_client()
 
+    # Unique ID for this turn — used to group all trace steps belonging to one request
+    turn_id = f"{session_id or 'anon'}_{_dt.datetime.now().strftime('%Y%m%d_%H%M%S_%f')}"
+    _step   = 0   # increments with every logged event in this turn
+
     today  = _dt.date.today()
     system = (
         SYSTEM_PROMPT
@@ -203,6 +207,9 @@ def run_agent(
         if choice.finish_reason == "stop":
             content = choice.message.content or ""
             history.append({"role": "assistant", "content": content})
+            _step += 1
+            log_agent_trace(session_id, turn_id, _step, "llm_stop",
+                            result=content[:500] if content else None)
             if len(history) > _COMPRESS_TRIGGER:
                 history = compress_history(history)
             return content, history, side_effects
@@ -237,17 +244,32 @@ def run_agent(
                 except json.JSONDecodeError as e:
                     # Surface the parse failure as a tool result so the model
                     # knows what went wrong instead of silently receiving {}.
+                    err_content = json.dumps({
+                        "error": f"Tool arguments could not be parsed as JSON: {e}. "
+                                 "Please retry with valid JSON arguments."
+                    })
                     history.append({
                         "role":         "tool",
                         "tool_call_id": tc.id,
-                        "content":      json.dumps({
-                            "error": f"Tool arguments could not be parsed as JSON: {e}. "
-                                     "Please retry with valid JSON arguments."
-                        }),
+                        "content":      err_content,
                     })
+                    _step += 1
+                    log_agent_trace(session_id, turn_id, _step, "error",
+                                    tool_name=tc.function.name,
+                                    result=err_content)
                     continue
 
+                # Log the tool call before executing it
+                _step += 1
+                log_agent_trace(session_id, turn_id, _step, "tool_call",
+                                tool_name=tc.function.name, arguments=args)
+
                 result_str = mcp.call_tool(tc.function.name, args)
+
+                # Log the tool result immediately after
+                _step += 1
+                log_agent_trace(session_id, turn_id, _step, "tool_result",
+                                tool_name=tc.function.name, result=result_str)
 
                 history.append({
                     "role":         "tool",

@@ -1,4 +1,5 @@
 import os
+import json
 import sqlite3
 from pathlib import Path
 from dotenv import load_dotenv
@@ -250,6 +251,21 @@ def init_db(db_path=None):
         CREATE INDEX IF NOT EXISTS idx_sf_created      ON search_failures(created_at);
         CREATE INDEX IF NOT EXISTS idx_crm_followup    ON occasion_crm(followup_date, sent);
         CREATE INDEX IF NOT EXISTS idx_pkg_ref         ON packages(reference_number);
+
+        -- Agent trace log: every tool call + result + LLM decision, per turn
+        CREATE TABLE IF NOT EXISTS agent_traces (
+            id          INTEGER PRIMARY KEY AUTOINCREMENT,
+            session_id  TEXT NOT NULL,
+            turn_id     TEXT NOT NULL,
+            step        INTEGER NOT NULL,
+            event_type  TEXT NOT NULL,   -- 'tool_call' | 'tool_result' | 'llm_stop' | 'error'
+            tool_name   TEXT,
+            arguments   TEXT,            -- JSON string
+            result      TEXT,            -- JSON string (capped at 2000 chars)
+            created_at  TEXT DEFAULT CURRENT_TIMESTAMP,
+            FOREIGN KEY (session_id) REFERENCES chat_sessions(session_id)
+        );
+        CREATE INDEX IF NOT EXISTS idx_traces_session ON agent_traces(session_id, turn_id);
     """)
     conn.commit()
     conn.close()
@@ -290,6 +306,35 @@ def update_session_guest(session_id, email=None, name=None, phone=None, db_path=
     )
     conn.commit()
     conn.close()
+
+
+def log_agent_trace(
+    session_id, turn_id, step, event_type,
+    tool_name=None, arguments=None, result=None, db_path=None
+):
+    """Persist one agentic step (tool call, tool result, or LLM stop) to agent_traces."""
+    if not session_id:
+        return
+    try:
+        conn = get_db(db_path)
+        conn.execute(
+            """INSERT INTO agent_traces
+               (session_id, turn_id, step, event_type, tool_name, arguments, result)
+               VALUES (?, ?, ?, ?, ?, ?, ?)""",
+            (
+                session_id,
+                turn_id,
+                step,
+                event_type,
+                tool_name,
+                json.dumps(arguments) if arguments is not None else None,
+                str(result)[:2000]   if result    is not None else None,
+            ),
+        )
+        conn.commit()
+        conn.close()
+    except Exception:
+        pass   # tracing must never crash the main flow
 
 
 def load_recent_messages(session_id, limit=40, db_path=None):

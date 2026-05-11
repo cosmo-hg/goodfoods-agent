@@ -986,7 +986,7 @@ with tab_dashboard:
 # ════════════════════════════════════════════════════════════════
 with tab_admin:
     st.markdown("### Branch Administration")
-    adm1, adm2, adm3, adm4 = st.tabs(["All Branches", "Add Location", "Edit Location", "Analytics"])
+    adm1, adm2, adm3, adm4, adm5 = st.tabs(["All Branches", "Add Location", "Edit Location", "Analytics", "🔍 Agent Traces"])
 
     with adm1:
         all_b = _all_branches(active_only=False)
@@ -1222,3 +1222,106 @@ with adm4:
         conn.close()
     except Exception as exc:
         st.error(f"Analytics error: {exc}")
+
+# ── Agent Traces sub-tab ───────────────────────────────────────────────────────
+with adm5:
+    st.markdown("#### Agent Traces")
+    st.caption("Step-by-step log of every tool call, result, and LLM decision — one row per agentic event.")
+
+    try:
+        conn = get_db()
+
+        # ── Session picker ────────────────────────────────────────────────────
+        sessions = conn.execute("""
+            SELECT DISTINCT t.session_id,
+                   MIN(t.created_at) AS first_event,
+                   MAX(t.created_at) AS last_event,
+                   COUNT(*)          AS total_steps,
+                   cs.guest_name, cs.guest_email
+            FROM agent_traces t
+            LEFT JOIN chat_sessions cs ON cs.session_id = t.session_id
+            GROUP BY t.session_id
+            ORDER BY last_event DESC
+            LIMIT 50
+        """).fetchall()
+
+        if not sessions:
+            st.info("No agent traces recorded yet. Start a conversation in the Concierge tab.")
+            conn.close()
+        else:
+            session_labels = {
+                row["session_id"]: (
+                    f"{row['guest_name'] or 'Guest'} "
+                    f"({'  ' + row['guest_email'] if row['guest_email'] else 'unknown email'}) "
+                    f"· {row['total_steps']} steps · {row['last_event'][:16]}"
+                )
+                for row in sessions
+            }
+            selected_sid = st.selectbox(
+                "Select session",
+                options=list(session_labels.keys()),
+                format_func=lambda s: session_labels[s],
+                key="trace_session_picker"
+            )
+
+            st.markdown("---")
+
+            # ── Turns for selected session ────────────────────────────────────
+            turns = conn.execute("""
+                SELECT DISTINCT turn_id, MIN(created_at) AS turn_start
+                FROM agent_traces
+                WHERE session_id = ?
+                GROUP BY turn_id
+                ORDER BY turn_start ASC
+            """, (selected_sid,)).fetchall()
+
+            for t_idx, turn in enumerate(turns):
+                tid   = turn["turn_id"]
+                ttime = turn["turn_start"][:19].replace("T", " ")
+
+                steps = conn.execute("""
+                    SELECT step, event_type, tool_name, arguments, result, created_at
+                    FROM agent_traces
+                    WHERE session_id = ? AND turn_id = ?
+                    ORDER BY step ASC
+                """, (selected_sid, tid)).fetchall()
+
+                # Count tool calls in this turn for the summary line
+                tool_calls = [s for s in steps if s["event_type"] == "tool_call"]
+                tools_used = ", ".join(dict.fromkeys(s["tool_name"] for s in tool_calls)) or "—"
+                outcome    = next((s for s in reversed(steps) if s["event_type"] == "llm_stop"), None)
+
+                label = f"**Turn {t_idx + 1}** · {ttime} · tools: `{tools_used}`"
+                with st.expander(label, expanded=(t_idx == len(turns) - 1)):
+                    for s in steps:
+                        etype = s["event_type"]
+
+                        if etype == "tool_call":
+                            st.markdown(f"**🔧 Step {s['step']} — tool call: `{s['tool_name']}`**")
+                            try:
+                                args_pretty = json.dumps(json.loads(s["arguments"]), indent=2) if s["arguments"] else "—"
+                            except Exception:
+                                args_pretty = s["arguments"] or "—"
+                            st.code(args_pretty, language="json")
+
+                        elif etype == "tool_result":
+                            st.markdown(f"**📥 Step {s['step']} — result: `{s['tool_name']}`**")
+                            try:
+                                res_pretty = json.dumps(json.loads(s["result"]), indent=2) if s["result"] else "—"
+                            except Exception:
+                                res_pretty = s["result"] or "—"
+                            st.code(res_pretty, language="json")
+
+                        elif etype == "llm_stop":
+                            st.markdown(f"**✅ Step {s['step']} — LLM final response**")
+                            st.markdown(f"> {s['result'] or '—'}")
+
+                        elif etype == "error":
+                            st.markdown(f"**❌ Step {s['step']} — error: `{s['tool_name']}`**")
+                            st.error(s["result"] or "Unknown error")
+
+                        st.markdown("<hr style='margin:4px 0;border-color:#f0f0f0'>", unsafe_allow_html=True)
+
+        conn.close()
+    except Exception as exc:
+        st.error(f"Agent traces error: {exc}")
