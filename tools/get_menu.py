@@ -20,10 +20,11 @@ def get_branch_menu(branch_id, category=None, dietary_filter=None, db_path=None)
         params.append(category)
 
     dietary_map = {
-        "vegetarian": "is_vegetarian",
-        "vegan": "is_vegan",
+        "vegetarian":  "is_vegetarian",
+        "vegan":       "is_vegan",
         "gluten_free": "is_gluten_free",
-        "halal": "is_halal",
+        "halal":       "is_halal",
+        "jain":        "is_jain",
     }
     if dietary_filter and dietary_filter.lower() in dietary_map:
         query += f" AND {dietary_map[dietary_filter.lower()]} = 1"

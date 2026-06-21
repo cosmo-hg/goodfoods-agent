@@ -143,7 +143,7 @@ def log_competitor_mention(**kwargs):
         "properties": {
             "branch_id":      {"type": "integer", "description": "Branch ID from search_branches result"},
             "category":       {"type": ["string", "null"], "description": "Filter by category: Starters, Mains, Desserts, Drinks"},
-            "dietary_filter": {"type": ["string", "null"], "description": "Filter: vegetarian, vegan, gluten_free, halal"},
+            "dietary_filter": {"type": ["string", "null"], "description": "Filter by dietary compliance: vegetarian, vegan, gluten_free, halal, jain"},
         },
         "required": ["branch_id"],
     },
