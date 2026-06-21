@@ -1,14 +1,14 @@
 <div align="center">
 
-<img src="https://img.shields.io/badge/Model-Llama--3.1--8B%20via%20Groq-orange?style=for-the-badge" />
+<img src="https://img.shields.io/badge/Model-Llama--3.3--70B%20via%20Groq-orange?style=for-the-badge" />
 <img src="https://img.shields.io/badge/Stack-Python%20%2B%20Streamlit-blue?style=for-the-badge" />
 <img src="https://img.shields.io/badge/Protocol-MCP%20JSON--RPC%202.0-green?style=for-the-badge" />
 <img src="https://img.shields.io/badge/DB-SQLite%20%2F%20PostgreSQL-lightgrey?style=for-the-badge" />
 
 # 🍽️ GoodFoods AI Reservation Agent
 
-**Sage** — An autonomous, tool-calling AI concierge for GoodFoods restaurant chain.
-From natural-language intent to confirmed booking in under 90 seconds, zero human intervention.
+**Sage** — An autonomous, tool-calling AI concierge for the GoodFoods continental restaurant group, with 72 locations across Bangalore.
+From natural-language intent ("best pizza in Indiranagar for 4 this Saturday") to confirmed booking in under 90 seconds, zero human intervention.
 
 ### 🚀 [Live Demo → https://cosmo-hg-goodfoods-agent-app-nnadpw.streamlit.app/](https://cosmo-hg-goodfoods-agent-app-nnadpw.streamlit.app/)
 
@@ -29,7 +29,7 @@ The live app and demo expose **all four tabs** for evaluation purposes:
 | Tab | What it is | Who sees it in production |
 |-----|-----------|--------------------------|
 | **Concierge** | The guest-facing AI chat | ✅ Every customer |
-| **Locations** | Browse all 75 branches on a map | ✅ Every customer |
+| **Locations** | Browse all 72 Bangalore branches by area and cuisine | ✅ Every customer |
 | **Dashboard** | Live booking analytics, revenue KPIs, demand signals | 🔒 Restaurant management only |
 | **Admin** | Search failures, competitor mentions, occasion CRM pipeline | 🔒 Internal operations team only |
 
@@ -42,7 +42,7 @@ In a real deployment the **Dashboard** and **Admin** tabs would sit behind staff
 ### Prerequisites
 
 - Python 3.9+
-- A free [Groq API key](https://console.groq.com/) (llama-3.1-8b-instant)
+- A free [Groq API key](https://console.groq.com/) (llama-3.3-70b-versatile)
 
 ### 1 — Clone and install
 
@@ -74,7 +74,7 @@ GROQ_API_KEY_3=gsk_zzzzzzzzzzzzzzzzzzzz
 ### 3 — Seed the database
 
 ```bash
-# Seed 50 branches + full menus (required)
+# Seed 72 Bangalore branches + full continental menus (required)
 python scripts/seed_data.py
 
 # Pre-populate demo bookings for the dashboard (optional)
@@ -118,15 +118,17 @@ goodfoods-agent/
 │   └── protocol.py           # Protocol dataclasses (Request, Response, ToolDefinition)
 │
 ├── tools/
-│   ├── search_branches.py    # Haversine distance + multi-factor weighted scoring
+│   ├── search_branches.py    # Filters-as-filters search; popularity ranking; dish-level matching; per-result confidence
+│   ├── is_served_area.py     # Pre-search sanity check — refuses "best pizza in Brooklyn" honestly
 │   ├── check_availability.py # 30-min slot generation + occupancy calculation
-│   ├── make_reservation.py   # Booking writer with duplicate guard
+│   ├── make_reservation.py   # Booking writer with duplicate guard + popularity nudge
 │   ├── modify_cancel.py      # Modify and cancel flows
 │   ├── get_reservation.py    # Lookup by GF-XXXXXX reference number
 │   ├── get_user_profile.py   # Returning guest recognition by email
 │   ├── create_package.py     # Occasion experience package builder
 │   ├── get_menu.py           # Menu fetcher with dietary filters
 │   ├── log_search_failure.py # Demand-intelligence signal logger
+│   ├── log_competitor.py     # LLM-callable competitor mention capture
 │   └── corporate_accounts.py # B2B account lookup
 │
 ├── intelligence/
@@ -136,7 +138,7 @@ goodfoods-agent/
 │   └── occasion_crm.py       # T+364d anniversary follow-up scheduler
 │
 ├── scripts/
-│   ├── seed_data.py          # Branch + menu seed data (50 branches, 12 cuisines)
+│   ├── seed_data.py          # Bangalore continental chain — 72 branches × 8 cuisines, popularity-derived ratings
 │   └── seed_demo_reservations.py
 │
 ├── tests/
@@ -171,7 +173,7 @@ goodfoods-agent/
 │  └──────────────────┘  │
 │          │              │         ┌──────────────────────┐
 │          ▼              │         │  Groq API            │
-│  ┌──────────────────┐  │ ──────► │  llama-3.1-8b        │
+│  ┌──────────────────┐  │ ──────► │  llama-3.3-70b       │
 │  │  _call_api()     │  │ ◄────── │  → stop OR           │
 │  │  (key rotation)  │  │         │    tool_call(s)       │
 │  └──────────────────┘  │         └──────────────────────┘
@@ -243,7 +245,7 @@ The prompt collects only what is needed at the right moment. Email is requested 
 
 | Section | Purpose |
 |---------|---------|
-| Identity & Scope | Sage, GoodFoods only, NYC — anchors the model |
+| Identity & Scope | Sage, GoodFoods Bangalore-only, 8 continental concepts — anchors the model |
 | Voice & Tone | Warm, specific, decisive; cite real data from tools |
 | Intent Decision Tree | Semantic label (BROWSE/BOOKING/MENU/MANAGE/GREET) resolved silently; model acts immediately |
 | Email & Profile Timing | Collect only when booking-ready, not on greeting |
@@ -306,56 +308,51 @@ arguments = {k: v for k, v in arguments.items() if k in known_props}
 
 ## Example Conversations
 
-### Journey 1 — Italian restaurant search and booking
+### Journey 1 — Italian search + booking in Indiranagar
 
 ```
-User:   Find me a good Italian spot in Downtown for 4 people this Saturday at 7pm
+User:   best pizza in Indiranagar for 4 this Saturday at 8pm
 
-Sage:   [→ search_branches(cuisine="Italian", location_hint="Downtown", party_size=4,
-           latitude=40.7128, longitude=-74.0060)]
+Sage:   [→ is_served_area(location="Indiranagar")] → served=true
+        [→ search_branches(cuisine="Italian", dish="pizza",
+           location_hint="Indiranagar", party_size=4)]
 
-        Here are our top Downtown Italian kitchens for 4 this Saturday:
+        Our Indiranagar Italian Kitchen is one of the strongest matches:
 
-        🍽️ GoodFoods Downtown — Italian Kitchen
-        📍 0.3 km · ⭐ 4.7 · $$$ · 80 seats · 11:00–22:30
-        Popular: Truffle Rigatoni $28 · Branzino al Forno $34
-        🥗 Vegetarian  🌾 Gluten-Free options
+        🍽️ GoodFoods Indiranagar — Italian Kitchen
+        ⭐ 4.5 (820 reviews) · ₹₹₹ · 80 seats · 12:00–23:00
+        Known for: Margherita Pizza ₹450 · Funghi e Tartufo Pizza ₹640
+        🥗 Vegetarian  🌱 Vegan options  Jain-friendly
 
-        [two more options presented]
+        Shall I check Saturday availability and lock you in?
 
-        Which one catches your eye? I can check availability and lock in a table.
+User:   Yes, 8pm please
 
-User:   The first one, please.
+Sage:   [→ check_availability(branch_id=12, date="2026-06-13", party_size=4)]
 
-Sage:   [→ check_availability(branch_id=3, date="2026-05-09", party_size=4)]
-
-        Great choice! Available Saturday slots for 4:
-        Dinner: 18:00 · 18:30 · 19:00 · 19:30 · 20:00
-
-        Could I grab your email to check for a profile?
+        20:00 is open for 4. Could I grab your email — I'll check if you
+        already have a profile with us.
 
 User:   harsh@example.com
 
-Sage:   [→ get_user_profile(email="harsh@example.com")]  → found: false
+Sage:   [→ get_user_profile(email="harsh@example.com")] → found: false
 
-        No problem. To lock in 19:00 I just need your full name and phone.
+        To lock in 20:00 on Saturday I just need your full name and phone.
 
-User:   Harsh Gupta, 9876543210
+User:   Harsh Gupta, +91 98450 12345
 
 Sage:   Here's what I'll book:
-        📍 GoodFoods Downtown — Italian Kitchen
-        📅 Saturday, May 09 2026  ·  🕐 19:00  ·  👥 4 guests
-        👤 Harsh Gupta  ·  ✉ harsh@example.com  ·  📞 9876543210
+        📍 GoodFoods Indiranagar — Italian Kitchen
+        📅 Saturday, 13 June 2026  ·  🕐 20:00  ·  👥 4 guests
+        👤 Harsh Gupta  ·  ✉ harsh@example.com  ·  📞 +91 98450 12345
         Shall I confirm?
 
 User:   Yes!
 
-Sage:   [→ make_reservation(branch_id=3, user_name="Harsh Gupta",
-           user_email="harsh@example.com", user_phone="9876543210",
-           party_size=4, date="2026-05-09", time="19:00")]
+Sage:   [→ make_reservation(...)]
 
         ✅ Confirmed! Ref: GF-A7X2KP
-        See you at our Downtown Italian Kitchen this Saturday at 19:00. 🍽️
+        See you at our Indiranagar Italian Kitchen this Saturday at 20:00. 🍽️
 ```
 
 ---
@@ -363,38 +360,39 @@ Sage:   [→ make_reservation(branch_id=3, user_name="Harsh Gupta",
 ### Journey 2 — Returning guest (one-click booking)
 
 ```
-User:   Italian dinner for 2 tomorrow at 8pm
+User:   French Bistro for 2 tomorrow at 8pm
 
-Sage:   [→ search_branches(cuisine="Italian", party_size=2)]
-        [presents results]
+Sage:   [→ search_branches(cuisine="French", party_size=2)]
+        [presents 3 high-confidence Bistro branches in Bangalore]
 
-        Could I grab your email to check if you have a profile with us?
+        Could I grab your email to check if you already have a profile?
 
-User:   alex@company.com
+User:   sneha.reddy@flipkart.com
 
-Sage:   [→ get_user_profile(email="alex@company.com")]
-        → found: true  ·  name="Alex Chen"  ·  phone="2125550199"  ·  visits=8
+Sage:   [→ get_user_profile(email="sneha.reddy@flipkart.com")]
+        → found: true · name="Sneha Reddy" · phone="••••5678" · visits=6
 
-        Welcome back, Alex! You've dined with us 8 times.
-        Shall I use your details on file (Alex Chen / ••••0199)?
+        Welcome back, Sneha! You've dined with us 6 times.
+        Shall I use your details on file?
 
-User:   Yes, and the Downtown Italian please.
+User:   Yes, and the UB City French Bistro please.
 
-Sage:   [→ check_availability(branch_id=3, date="2026-05-06", party_size=2)]
-        [→ make_reservation(...using saved profile...)]
+Sage:   [→ check_availability + make_reservation using saved profile]
 
         ✅ Confirmed! Ref: GF-BQ9L4M
-        See you tomorrow at 20:00, Alex! 🍽️
+        See you tomorrow at 20:00, Sneha! 🍽️
 ```
 
 ---
 
-### Journey 3 — Anniversary dinner with experience package
+### Journey 3 — Anniversary with experience package
 
 ```
-User:   Book our anniversary dinner — French, 2 people, next Friday evening
+User:   Book our anniversary — Steakhouse, 2 people, next Friday evening
 
-Sage:   [→ search_branches + check_availability + pre-booking summary]
+Sage:   [→ is_served_area("Bangalore") → served=true (no specific area)]
+        [→ search_branches(cuisine="Steakhouse", party_size=2)
+         → check_availability → pre-booking summary]
 
         Shall I confirm?
 
@@ -406,10 +404,10 @@ Sage:   [→ make_reservation(..., occasion="anniversary")]
 
         ✅ Confirmed! Ref: GF-RX3MQ7 🎉
 
-        I've put together an Anniversary Experience:
-        ✓ Candlelit table for two
-        ✓ Personalised dessert with your names
-        ✓ Complimentary sparkling wine on arrival
+        Anniversary Experience put together at our Grillroom:
+        ✓ Candle-lit corner table for two
+        ✓ Personalised dessert plate with your names
+        ✓ Complimentary glass of bubbly on arrival
         ✓ Dedicated server for the evening
 ```
 
@@ -418,17 +416,17 @@ Sage:   [→ make_reservation(..., occasion="anniversary")]
 ### Journey 4 — Modify then cancel
 
 ```
-User:   Change my booking GF-A7X2KP to 20:00
+User:   Change my booking GF-A7X2KP to 20:30
 
-Sage:   [→ get_reservation(reference_number="GF-A7X2KP")]
-        [→ check_availability(branch_id=3, date="2026-05-09", party_size=4)]
+Sage:   [→ get_reservation("GF-A7X2KP")]
+        [→ check_availability(branch_id=12, date="2026-06-13", party_size=4)]
 
-        20:00 is available. I'll update GF-A7X2KP: 19:00 → 20:00. Shall I apply that?
+        20:30 is available. I'll update GF-A7X2KP: 20:00 → 20:30. Apply that?
 
 User:   Actually just cancel it
 
-Sage:   Are you sure you'd like to cancel GF-A7X2KP at GoodFoods Downtown
-        on May 09? This cannot be undone.
+Sage:   Are you sure you'd like to cancel GF-A7X2KP at our Indiranagar
+        Italian Kitchen on 13 June? This cannot be undone.
 
 User:   Yes, cancel it.
 
@@ -439,23 +437,28 @@ Sage:   [→ cancel_reservation(reference_number="GF-A7X2KP")]
 
 ---
 
-### Journey 5 — Search failure (business intelligence signal)
+### Journey 5 — Out-of-area refusal (and what it teaches the business)
 
 ```
-User:   Find me Ethiopian food near Midtown
+User:   best pizza in Brooklyn, any distance is ok
 
-Sage:   [→ search_branches(cuisine="Ethiopian", location_hint="Midtown")] → []
-        [→ log_search_failure(query="Ethiopian food near Midtown",
-           cuisine="Ethiopian", neighborhood="Midtown", reason="no_cuisine_match")]
+Sage:   [→ is_served_area("Brooklyn")] → served=false
 
-        We don't have an Ethiopian kitchen in Midtown yet — I've logged this
-        so our expansion team can see the demand.
+        GoodFoods is a Bangalore-only chain — we're not in Brooklyn.
+        I can show you our top pizza spots in Bangalore instead, if you like.
 
-        Alternatively, our Mediterranean and Middle Eastern kitchens nearby
-        share similar flavour profiles. Shall I show you those?
+User:   Find me a French Bistro in Pune
+
+Sage:   [→ is_served_area("Pune")] → served=false
+        [→ log_search_failure(query="French Bistro in Pune",
+           cuisine="French", reason="off_city")]
+
+        We don't operate in Pune yet — GoodFoods is a Bangalore chain.
+        I've logged this so our expansion team sees the demand.
+        Are you visiting Bangalore? I can find you a French Bistro here instead.
 ```
 
-> This `log_search_failure` call appears in **Admin → Analytics → Recent Search Failures** and feeds the site-selection intelligence dashboard.
+> Search failures appear in **Admin → Analytics → Recent Search Failures** and feed the site-selection intelligence pipeline. The `is_served_area` check is what stops the agent from inventing a Brooklyn branch — a class of failure that earlier versions did make.
 
 ---
 
@@ -492,25 +495,43 @@ This is not a chatbot. It is GoodFoods' **primary customer relationship layer** 
 
 ---
 
-## Assumptions, Limitations & Future Enhancements
+## Production-grade safeguards
 
-### Assumptions Made
+What's hardened — every item below is enforced in code and has at least one regression test:
+
+| Concern | How it's closed |
+|---|---|
+| **Overbooking under concurrent writes** | `make_reservation` runs check + insert inside a single `BEGIN IMMEDIATE` transaction. SQLite holds a RESERVED lock, serialising racers. `busy_timeout = 5000ms` lets writers wait briefly instead of failing fast. Tested with 10 concurrent threads booking the last 4 seats — exactly 4 succeed. |
+| **Modify under concurrent writes** | Same atomic transaction pattern. Capacity re-checked inside the lock; UPDATE happens in the same txn. Tested with two threads trying to move into the same slot — one wins, one is rejected cleanly. |
+| **Modify / cancel on past bookings** | Both functions read the reservation date and return a user-friendly error if it's already in the past. Tested. |
+| **LLM date math** | Deterministic date resolver pre-computes the next 14 days with weekday names + common relative phrases ("this saturday", "next weekend", "tomorrow"). Injected into user_context every turn. The LLM looks up; it never calculates. Tested for edge cases (today = Saturday, "this Saturday" = today). |
+| **Indian phone validation** | Strict regex accepts only valid Indian mobile formats (10 digits starting 6-9, optional +91 prefix, optional separators). Tested with 10 valid + 8 invalid cases. |
+| **Schema migrations on legacy databases** | `init_db()` is fully idempotent via `_safe_add_column()` — checks `PRAGMA table_info` before `ALTER TABLE ADD COLUMN`. New columns added in later schema versions land cleanly on old DBs without data loss. Indexes that reference new columns are created AFTER the migration step. Tested by simulating a legacy DB and upgrading it. |
+| **Time outside branch hours** | Validated inside the booking transaction — rejected before any write. Tested for early-morning and late-night attempts. |
+| **Session persistence across browser refresh** | `?session=<uuid>` URL param pins the conversation. Slot state, intent, agent history, and identified-guest data are saved to `chat_sessions` after every turn and restored on resume. Tested via save/load round-trip. |
+| **Hallucinated coordinates** | The MCP registry wrapper for `search_branches` drops any lat/lon outside Bangalore's bounding box (12.7-13.2 N, 77.3-77.9 E) before reaching the search code. Defence against LLM invention. |
+| **TPM exhaustion crashes** | `RuntimeError("All keys rate-limited")` is caught at the app layer and surfaced as a friendly retry message — conversation state preserved. |
+| **Hallucinated slot values** | `make_reservation` validates against `_FAKE_NAMES`, `_FAKE_EMAILS`, `_FAKE_PHONES` denylists. Bad submissions are rejected with specific error messages rather than written to the DB. |
+| **"Re-asking the guest" memory failures** | Slot state (`agent/slots.py`) is the authoritative record of what's been collected. Injected into user_context every turn with explicit "do NOT re-ask" instructions. The LLM physically sees what's filled vs. missing. |
+
+### Assumptions retained
 
 | Assumption | Detail |
 |-----------|--------|
-| In-process MCP transport | Production would use stdio or HTTP/SSE transport for cross-process/cross-machine tools |
-| SQLite as dev database | PostgreSQL with `SELECT FOR UPDATE` row-level locking required for concurrent production writes |
-| Mock reminder pipeline | T-24h/T-2h reminder logic is wired; actual dispatch requires WhatsApp Business API HSM template pre-approval |
-| NYC neighbourhood coordinates | Representative lat/lng centroids, not address-level GPS |
-| English only (Phase 1) | Hindi/Indic language support requires a multilingual model; a translation shim alone does not work for agentic tool-call systems where structured intent must be extracted in the source language |
+| In-process MCP transport | Production at scale would use stdio or HTTP/SSE for cross-process/cross-machine tools. Method-handler logic is unchanged either way. |
+| Bangalore neighbourhood coordinates | Real lat/lng centroids for 25 served areas. Branch coordinates jittered ±400m around centroids; distances from manual area picks labelled "approximate" in the UI vs "real" for actual GPS reads. |
+| Popularity-derived ratings | Long-tail distribution at seed time, nudged on every confirmed booking. "Best of" queries return defensible, stable answers. |
+| English only (Phase 1) | Hindi/Indic support requires a multilingual model; a translation shim doesn't work for agentic tool-calling where structured intent must be extracted in the source language. |
+| Mock WhatsApp reminders | T-24h / T-2h pipeline is wired; actual dispatch needs Meta HSM template approval. Out of MVP scope. |
+| No payment gateway | Experience packages and corporate billing are schema-complete; integration with Razorpay/Stripe is post-MVP. |
 
-### Known Limitations
+### Streamlit architectural limits (not closable in code)
 
-- **8B model context window:** Very long sessions use sliding-window history compression after 16 turns. Tool results are summarised in the digest, not dropped.
-- **Groq free-tier rate limits:** ~30 RPM per key. Multi-key rotation handles burst traffic; sustained high load requires paid-tier keys.
-- **WhatsApp HSM approval lead time:** Reminder template copy must be frozen and submitted to Meta 1-7 days before Phase 2 launch. Any copy change requires re-approval.
-- **No real payment gateway:** Experience packages and corporate billing are schema-complete but require a payment integration (Razorpay/Stripe) in production.
-- **SQLite concurrent writes:** Suitable for demo and single-user testing. Multi-user production requires PostgreSQL with proper connection pooling.
+- Server-side rendering only — no token-by-token streaming
+- No native cookies — session persistence works via URL param
+- Limited mobile responsiveness — desktop-first
+
+These would only be solved by moving the frontend to Next.js (laid out in Option B of an earlier discussion).
 
 ### Future Enhancements
 
@@ -534,7 +555,7 @@ This is not a chatbot. It is GoodFoods' **primary customer relationship layer** 
 | Component | Technology | Version |
 |-----------|-----------|---------|
 | UI | Streamlit | 1.32+ |
-| LLM | llama-3.1-8b-instant via Groq | — |
+| LLM | llama-3.3-70b-versatile via Groq | — |
 | API Client | openai (OpenAI-compatible, Groq endpoint) | 1.12+ |
 | Tool Protocol | MCP — in-process JSON-RPC 2.0 | — |
 | Database | SQLite (dev) | built-in |

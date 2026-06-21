@@ -1,8 +1,28 @@
 """
-Seed 75 GoodFoods locations with real menus and 10 corporate accounts.
+Seed the GoodFoods database — a Bangalore-based multi-cuisine restaurant chain.
+
+Chain composition (researched against real Bangalore dining patterns):
+  • 5 North Indian Kitchens     — butter chicken, dal, paneer, biryani
+  • 4 South Indian Tiffin Rooms — dosa, idli, meals, filter coffee
+  • 4 Biryani Houses            — Hyderabadi, Donne, Lucknowi
+  • 3 Indo-Chinese              — manchurian, chilli chicken, noodles
+  • 3 Mughlai Grills            — kebabs, awadhi gravies, sheermal
+  • 2 Coastal Kitchens          — Mangalorean, ghee roast, neer dosa
+  • 2 Italian Kitchens          — wood-fired pizza, hand-made pasta
+  • 2 Continental Cafes         — all-day brunch, burgers, sandwiches
+  = 25 branches across 25 Bangalore neighbourhoods
+
+Prices are in INR and reflect 2025 Bangalore market rates. Dish tags drive
+the dish-level search (so "manchurian" finds Indo-Chinese branches,
+"biryani" finds Biryani Houses and North Indian Kitchens that serve biryani).
+
+Popularity is drawn from a realistic long-tail distribution; rating and
+review_count are derived from popularity so "best of" queries return a
+stable, defensible ranking.
+
 Run: python scripts/seed_data.py
 """
-import json, random, sys
+import random, sys
 from pathlib import Path
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
@@ -11,277 +31,380 @@ from config import init_db, get_db, NEIGHBORHOOD_COORDS
 random.seed(42)
 
 NEIGHBORHOODS = list(NEIGHBORHOOD_COORDS.keys())
+
 NEIGHBORHOOD_ABBREV = {
-    "Downtown": "DT", "Midtown": "MT", "Uptown": "UP", "West Side": "WS",
-    "East Side": "ES", "North End": "NE", "South Bay": "SB", "Harbor View": "HV",
-    "Garden District": "GD", "Financial District": "FD", "Arts Quarter": "AQ",
-    "University District": "UD", "Riverside": "RV", "Greenwood": "GW", "Lakefront": "LK",
-}
-CUISINES = [
-    "Italian", "Indian", "Mexican", "Japanese", "Chinese",
-    "Mediterranean", "Thai", "American", "French", "Korean",
-    "Middle Eastern", "Vietnamese",
-]
-CUISINE_LABEL = {
-    "Italian": "Italian Kitchen", "Indian": "Indian Spice", "Mexican": "Mexican Grill",
-    "Japanese": "Japanese Kitchen", "Chinese": "Chinese Garden",
-    "Mediterranean": "Mediterranean Table", "Thai": "Thai Kitchen",
-    "American": "American Grill", "French": "French Bistro", "Korean": "Korean BBQ",
-    "Middle Eastern": "Middle Eastern Mezze", "Vietnamese": "Vietnamese Kitchen",
-}
-BRANCH_DESCRIPTIONS = {
-    "Italian": "Authentic Italian cuisine with house-made pastas, wood-fired pizzas, and an extensive wine list sourced from family vineyards across Tuscany and Piedmont.",
-    "Indian": "Regional Indian recipes passed down through generations, featuring aromatic curries, tandoor-cooked breads, and a spice selection flown in directly from Kerala.",
-    "Mexican": "Contemporary Mexican cooking rooted in tradition — from Oaxacan moles to Baja-style seafood, paired with handcrafted margaritas and an agave spirits selection.",
-    "Japanese": "A curated Japanese dining experience spanning ramen, omakase sushi, and robata grills, with seasonal ingredients imported weekly from Tokyo's Tsukiji market.",
-    "Chinese": "Cantonese dim sum, Sichuan wok dishes, and Peking specialities served in an elegant setting with private dining available for banquet-style gatherings.",
-    "Mediterranean": "Flavours of the Mediterranean coast — Greek mezze, Lebanese mezze, Spanish tapas, and North African tagines under one roof with a terrace view.",
-    "Thai": "Street-food energy meets fine dining — bold pad thais, fragrant green curries, and fresh papaya salads prepared with authentic Thai herbs and pastes.",
-    "American": "Classic American comfort food elevated — slow-smoked BBQ, gourmet burgers, New England lobster rolls, and craft cocktails from our in-house mixologists.",
-    "French": "Parisian bistro classics and contemporary French techniques: duck confit, soufflés, and an award-winning cheese board, complemented by a 200-label wine cellar.",
-    "Korean": "Modern Korean table — KBBQ grills at every table, bibimbap, tteokbokki, and a banchan spread that changes with the season.",
-    "Middle Eastern": "A journey across the Levant, Arabia, and Persia — mezze platters, slow-roasted shawarma, saffron rice, and mint tea to finish.",
-    "Vietnamese": "Vietnamese cooking at its finest — pho broth simmered for 24 hours, bánh mì crafted fresh daily, and a herb garden that supplies every plate.",
+    "Indiranagar": "IND", "Koramangala": "KOR", "HSR Layout": "HSR",
+    "Whitefield": "WHF", "Marathahalli": "MAR", "Bellandur": "BEL",
+    "Sarjapur Road": "SJR", "JP Nagar": "JPN", "Jayanagar": "JYN",
+    "MG Road": "MGR", "Brigade Road": "BRG", "Church Street": "CHS",
+    "Lavelle Road": "LAV", "UB City": "UBC", "Ulsoor": "ULS",
+    "Frazer Town": "FRZ", "Richmond Town": "RIC", "Domlur": "DOM",
+    "Old Airport Road": "OAR", "Malleshwaram": "MLS", "Rajajinagar": "RJN",
+    "Hebbal": "HEB", "Yelahanka": "YLK", "Kalyan Nagar": "KLN",
+    "New BEL Road": "NBL",
 }
 
-STREETS = [
-    "Main St", "Park Ave", "Broadway", "5th Ave", "Lexington Ave",
-    "Madison Ave", "7th Ave", "8th Ave", "Hudson St", "Greenwich Ave",
-    "Spring St", "Canal St", "Bleecker St", "Prince St", "Grand St",
+# 8 cuisine concepts — Indian-majority, continental as accents
+CUISINES = [
+    "North Indian", "South Indian", "Biryani", "Indo-Chinese",
+    "Mughlai", "Coastal", "Italian", "Continental",
 ]
+
+CUISINE_LABEL = {
+    "North Indian":  "North Indian Kitchen",
+    "South Indian":  "South Indian Tiffin Room",
+    "Biryani":       "Biryani House",
+    "Indo-Chinese":  "Indo-Chinese",
+    "Mughlai":       "Mughlai Grill",
+    "Coastal":       "Coastal Kitchen",
+    "Italian":       "Italian Kitchen",
+    "Continental":   "Continental Cafe",
+}
+
+BRANCH_DESCRIPTIONS = {
+    "North Indian":  "Punjabi-leaning classics — butter chicken, dal makhani, slow-cooked kebabs, fresh tandoor breads. The kind of meal you'd order for a Sunday family lunch.",
+    "South Indian":  "Bangalore's staple breakfast and meals spot — crisp dosas off cast-iron tawas, steam-fluffy idlis, filter coffee in steel tumblers. Open from sunrise.",
+    "Biryani":       "Hyderabadi dum, Donne (Bangalore-style) and Lucknowi biryanis cooked in sealed handis. Long-grain basmati, slow-rendered fat, served with mirchi ka salan and raita.",
+    "Indo-Chinese":  "The Indo-Chinese canon done loud and hot — gobi manchurian, chilli chicken, hakka noodles, schezwan everything. Wok-fired in seconds.",
+    "Mughlai":       "Lucknow and Awadh on a plate — galouti kebabs that dissolve on the tongue, kakori seekh, slow-stewed nihari, sheermal fresh from the tandoor.",
+    "Coastal":       "Coastal Karnataka and Mangalorean — chicken ghee roast, kane fry, neer dosa with chicken curry. Coconut, kokum, fresh ground masala.",
+    "Italian":       "Wood-fired Neapolitan pizzas, hand-rolled pasta, Tuscan-leaning wine list. Hand-stretched mozzarella, San Marzano sauce, 36-hour-proven dough.",
+    "Continental":   "All-day European cafe — flaky croissants in the morning, salads and bowls at lunch, pasta and pan-seared mains after sundown.",
+}
+
+# Real-sounding Bangalore street names per neighbourhood
+STREETS = {
+    "Indiranagar":      ["100 Feet Road", "12th Main", "CMH Road", "Old Madras Road", "Defence Colony 7th Main"],
+    "Koramangala":      ["80 Feet Road", "5th Block 7th Main", "4th Block 100ft Road", "Sony World Junction", "6th Block 17th Main"],
+    "HSR Layout":       ["27th Main", "17th Cross Sector 3", "19th Main Sector 1", "Outer Ring Road", "5th Sector Service Road"],
+    "Whitefield":       ["ITPL Main Road", "Whitefield Main Road", "EPIP Zone", "Hope Farm Junction", "Phoenix Marketcity"],
+    "Marathahalli":     ["Outer Ring Road", "Marathahalli Bridge", "Spice Garden Road", "Doddanekundi", "Kundalahalli Gate"],
+    "Bellandur":        ["Outer Ring Road", "Bellandur Gate", "Ecospace Road", "Iblur Junction", "Devarabisanahalli"],
+    "Sarjapur Road":    ["Sarjapur Main Road", "Haralur Road", "Iblur Cross", "Carmelaram", "Choodasandra"],
+    "JP Nagar":         ["24th Main 6th Phase", "Ring Road 5th Phase", "Bannerghatta Main Road", "7th Phase Main", "3rd Phase Service Road"],
+    "Jayanagar":        ["11th Main 4th Block", "30th Cross 9th Block", "Kanakapura Road", "Tilak Nagar Main", "South End Circle"],
+    "MG Road":          ["Mahatma Gandhi Road", "Trinity Circle", "Cauvery Bhavan", "Anil Kumble Circle", "Plaza Theatre Junction"],
+    "Brigade Road":     ["Brigade Road", "Rest House Road", "Residency Road", "Magrath Road", "Brigade Gateway"],
+    "Church Street":    ["Church Street", "Museum Road", "St Marks Road", "Wood Street", "Coles Road"],
+    "Lavelle Road":     ["Lavelle Road", "Vittal Mallya Road", "Kasturba Road", "Cunningham Road Junction", "Prestige Towers"],
+    "UB City":          ["Vittal Mallya Road", "UB City Mall", "Kasturba Road", "Lavelle Road End", "Cubbon Park Edge"],
+    "Ulsoor":           ["Halasuru Main Road", "MG Road East End", "Cambridge Road", "Lido Mall Road", "Ulsoor Lake Road"],
+    "Frazer Town":      ["Mosque Road", "Hayes Road", "Coles Road", "Wheeler Road", "Promenade Road"],
+    "Richmond Town":    ["Richmond Road", "Langford Road", "Hosur Road", "Lakkasandra", "Brigade Road South"],
+    "Domlur":           ["Domlur Layout 100ft Road", "Old Airport Road", "Indiranagar Boundary", "ESI Domlur", "Domlur Service Road"],
+    "Old Airport Road": ["Old Airport Road", "Konena Agrahara", "HAL Old Airport", "Murugeshpalya", "Wind Tunnel Road"],
+    "Malleshwaram":     ["8th Cross Sampige Road", "15th Cross", "Margosa Road", "Mantri Mall Road", "11th Main"],
+    "Rajajinagar":      ["West of Chord Road", "1st Block Main", "ESI Hospital Road", "Rajajinagar Industrial Town", "6th Block Service Road"],
+    "Hebbal":           ["Outer Ring Road", "Manyata Tech Park", "Bellary Road", "Mekhri Circle", "Esteem Mall Road"],
+    "Yelahanka":        ["Doddaballapur Road", "Yelahanka New Town", "Kogilu Cross", "Airport Road", "GKVK Campus Road"],
+    "Kalyan Nagar":     ["HRBR Layout 5th Main", "Kammanahalli Main Road", "Banaswadi Main Road", "Outer Ring Road", "OMBR Layout"],
+    "New BEL Road":     ["New BEL Road", "Mekhri Circle", "RMV 2nd Stage", "Sanjay Nagar", "MS Ramaiah Road"],
+}
 
 # ── Menu templates ────────────────────────────────────────────────────────────
-# Each cuisine: list of (name, desc, category, base_price, veg, vegan, gf, halal, popular, cal)
+# Tuple: (name, description, category, price_INR, veg, vegan, gluten_free, jain, popular, calories, dish_tags)
+
 MENUS = {
+    "North Indian": [
+        # Starters
+        ("Paneer Tikka",          "Cottage cheese cubes in yogurt-spice marinade, charred in the tandoor",         "Starters", 320, True,  False, True,  False, True,  280, "paneer,tikka,starter,north indian,tandoor,vegetarian"),
+        ("Tandoori Chicken (Half)","Bone-in chicken, Kashmiri chilli marinade, slow-roasted over coals",            "Starters", 380, False, False, True,  False, True,  420, "tandoori chicken,tandoor,classic,north indian"),
+        ("Chicken Tikka",         "Boneless thigh, hung-curd marinade, smoky char from the tandoor",                "Starters", 340, False, False, True,  False, True,  340, "chicken tikka,starter,tandoor,north indian"),
+        ("Hara Bhara Kebab",      "Spinach, peas and cashew patties, crisp outside, soft within",                   "Starters", 280, True,  False, False, True,  False, 240, "kebab,vegetarian,jain,spinach,north indian"),
+        ("Murgh Malai Tikka",     "Creamy chicken kebab, hung curd, cheese, cardamom — mild and rich",              "Starters", 360, False, False, True,  False, True,  380, "malai tikka,chicken,kebab,creamy,tandoor"),
+        # Vegetarian Mains
+        ("Paneer Butter Masala",  "Cottage cheese in tomato-cashew gravy, fenugreek, finished with cream",          "Mains",    360, True,  False, True,  False, True,  520, "paneer,butter masala,classic,vegetarian,north indian"),
+        ("Dal Makhani",           "Black lentils slow-cooked overnight, butter, cream, smoked finish",              "Mains",    320, True,  False, True,  False, True,  380, "dal makhani,lentil,classic,vegetarian,north indian"),
+        ("Kadai Paneer",          "Cottage cheese with peppers and onions in fresh-ground kadai masala",            "Mains",    360, True,  False, True,  False, True,  480, "paneer,kadai,vegetarian,north indian"),
+        ("Palak Paneer",          "Fresh spinach gravy with cottage cheese cubes, garlic tadka",                    "Mains",    340, True,  False, True,  False, True,  420, "palak paneer,spinach,vegetarian,north indian"),
+        ("Dal Tadka",             "Yellow dal with cumin-garlic tempering, fresh coriander",                        "Mains",    260, True,  False, True,  True,  True,  300, "dal,lentil,jain,vegan,north indian"),
+        ("Chana Masala",          "Chickpeas in onion-tomato gravy with kasoori methi",                             "Mains",    280, True,  True,  True,  False, False, 320, "chana,chickpea,vegan,north indian"),
+        # Non-veg Mains
+        ("Butter Chicken",        "The classic — tandoori chicken in spiced tomato-cream gravy",                    "Mains",    420, False, False, True,  False, True,  580, "butter chicken,murgh makhani,classic,north indian"),
+        ("Chicken Tikka Masala",  "Char-grilled chicken in onion-tomato masala, cream finish",                      "Mains",    420, False, False, True,  False, True,  540, "chicken tikka masala,classic,north indian"),
+        ("Mutton Rogan Josh",     "Kashmiri lamb in aromatic gravy with whole spices",                              "Mains",    560, False, False, True,  False, True,  680, "mutton,rogan josh,kashmiri,classic,north indian"),
+        ("Chicken Korma",         "Almond-cashew gravy with tender chicken pieces",                                 "Mains",    420, False, False, True,  False, False, 540, "korma,chicken,creamy,north indian"),
+        ("Chicken Biryani",       "Dum-cooked basmati with chicken, saffron, served with raita and salan",          "Mains",    360, False, False, True,  False, True,  680, "biryani,chicken,dum,rice,north indian"),
+        # Breads & Rice
+        ("Butter Naan",           "Soft tandoor-baked bread brushed with butter",                                   "Sides",     60, True,  False, False, False, True,  180, "naan,bread,vegetarian"),
+        ("Garlic Naan",           "Naan topped with fresh garlic and coriander",                                    "Sides",     80, True,  False, False, False, True,  200, "garlic naan,bread,vegetarian"),
+        ("Tandoori Roti",         "Whole-wheat flatbread baked in the tandoor",                                     "Sides",     40, True,  True,  False, True,  False, 140, "roti,bread,vegan,jain,whole wheat"),
+        ("Lachha Paratha",        "Layered flaky paratha, crisp and buttery",                                       "Sides",     70, True,  False, False, False, False, 240, "paratha,bread,vegetarian"),
+        ("Jeera Rice",            "Basmati rice tempered with cumin and ghee",                                      "Sides",    180, True,  False, True,  False, True,  280, "jeera rice,vegetarian"),
+        # Desserts
+        ("Gulab Jamun (2 pc)",    "Milk-solid dumplings soaked in cardamom-rose syrup",                             "Desserts", 120, True,  False, False, False, True,  280, "gulab jamun,dessert,classic"),
+        ("Rasmalai",              "Cottage cheese dumplings in saffron-cardamom milk",                              "Desserts", 160, True,  False, False, False, True,  260, "rasmalai,dessert,bengali"),
+        ("Gajar Halwa",           "Slow-cooked grated carrot pudding with khoya, ghee, almonds",                    "Desserts", 160, True,  False, False, False, False, 320, "gajar halwa,carrot,dessert,winter"),
+        # Drinks
+        ("Sweet Lassi",           "Thick yogurt drink, sweet, dusted with cardamom",                                "Drinks",   120, True,  False, True,  False, True,  220, "lassi,sweet,yogurt"),
+        ("Masala Chai",           "Spiced black tea with cardamom, ginger, milk",                                   "Drinks",    60, True,  False, True,  False, True,   90, "chai,tea,masala"),
+        ("Fresh Lime Soda",       "Sweet or salt, served chilled",                                                  "Drinks",    80, True,  True,  True,  True,  False,  60, "lime soda,drink,vegan"),
+    ],
+    "South Indian": [
+        # Tiffin
+        ("Masala Dosa",           "Crisp rice-lentil crepe, potato-onion masala, sambar and three chutneys",        "Mains",    140, True,  False, False, False, True,  420, "masala dosa,dosa,classic,south indian"),
+        ("Plain Dosa",            "Thin crisp dosa with sambar and chutneys",                                       "Mains",    100, True,  True,  False, False, True,  320, "dosa,plain,vegan,south indian"),
+        ("Rava Dosa",             "Lacy semolina dosa with onion, cumin and curry leaves",                          "Mains",    150, True,  False, False, False, True,  340, "rava dosa,dosa,south indian"),
+        ("Set Dosa (3 pc)",       "Three thick fluffy dosas with vegetable kurma",                                  "Mains",    130, True,  False, False, False, False, 380, "set dosa,dosa,south indian"),
+        ("Idli (2 pc)",           "Steamed rice-lentil cakes, sambar, coconut chutney",                             "Mains",     70, True,  True,  False, True,  True,  180, "idli,classic,vegan,jain,south indian"),
+        ("Medu Vada (2 pc)",      "Crisp lentil doughnuts, sambar, chutney",                                        "Mains",     70, True,  True,  False, True,  True,  220, "vada,medu vada,vegan,south indian"),
+        ("Idli-Vada Combo",       "Two idlis, one vada, sambar and chutney trio",                                   "Mains",    110, True,  True,  False, True,  True,  300, "idli vada,combo,vegan,south indian"),
+        ("Onion Uttapam",         "Thick pancake topped with onion, chillies, coriander",                           "Mains",    130, True,  True,  False, False, True,  360, "uttapam,onion,vegan,south indian"),
+        ("Khara Bath",            "Savoury semolina with vegetables and curry leaves",                              "Starters",  90, True,  False, False, False, True,  280, "khara bath,upma,vegetarian,south indian"),
+        ("Kesari Bath",           "Sweet saffron-cardamom semolina with ghee, raisins, cashews",                    "Desserts",  90, True,  False, False, False, True,  320, "kesari bath,sweet,dessert,south indian"),
+        ("Bisi Bele Bath",        "Spiced rice-lentil-vegetable casserole, Karnataka style",                        "Mains",    160, True,  False, False, False, True,  420, "bisi bele bath,karnataka,vegetarian,classic"),
+        # Meals & Mains
+        ("South Indian Veg Meals","Rice, sambar, rasam, two veg, curd, papad, pickle, sweet",                       "Mains",    220, True,  False, False, False, True,  680, "meals,thali,vegetarian,south indian"),
+        ("South Indian Non-Veg Meals","Rice, sambar, rasam, chicken curry, fish fry, veg side, curd, papad",        "Mains",    320, False, False, False, False, True,  780, "meals,thali,non veg,south indian"),
+        ("Curd Rice",             "Cooled rice in tempered curd, pomegranate, curry leaves",                        "Mains",    120, True,  False, False, False, True,  240, "curd rice,vegetarian,south indian"),
+        ("Lemon Rice",            "Rice with mustard, turmeric, peanuts, fresh lemon",                              "Mains",    110, True,  True,  False, False, False, 280, "lemon rice,vegan,south indian"),
+        ("Sambar Rice",           "Rice cooked in spiced lentil-vegetable broth",                                   "Mains",    130, True,  True,  False, False, False, 320, "sambar rice,vegan,south indian"),
+        ("Chettinad Chicken",     "Tamil Nadu-style chicken with roasted spices and curry leaves",                  "Mains",    340, False, False, True,  False, True,  480, "chettinad,chicken,spicy,south indian"),
+        ("Andhra Chicken Curry",  "Spicy Andhra-style chicken in red gravy",                                        "Mains",    340, False, False, True,  False, False, 460, "andhra,chicken,spicy,south indian"),
+        # Snacks
+        ("Mysore Bonda (3 pc)",   "Crisp lentil fritters with coconut chutney",                                     "Starters",  80, True,  True,  False, False, False, 220, "bonda,fritter,vegan,karnataka"),
+        # Desserts
+        ("Mysore Pak",            "Karnataka classic — gram flour, ghee, sugar, melt-in-mouth",                     "Desserts",  80, True,  False, False, False, True,  240, "mysore pak,sweet,dessert,karnataka"),
+        ("Paal Payasam",          "Slow-cooked milk-rice pudding with cardamom",                                    "Desserts", 120, True,  False, False, False, False, 280, "payasam,kheer,dessert,south indian"),
+        # Drinks
+        ("Filter Coffee",         "Decoction brewed in steel filter, frothy with hot milk",                         "Drinks",    50, True,  False, True,  False, True,   80, "filter coffee,coffee,classic,south indian"),
+        ("Masala Buttermilk",     "Spiced cool buttermilk with ginger, curry leaves",                               "Drinks",    50, True,  False, True,  False, False,  60, "buttermilk,chaas,south indian"),
+        ("Tender Coconut Water",  "Fresh tender coconut, served with the kernel",                                   "Drinks",    80, True,  True,  True,  True,  False,  40, "tender coconut,coconut water,vegan"),
+    ],
+    "Biryani": [
+        # The core — biryanis
+        ("Hyderabadi Chicken Biryani","Long-grain basmati, dum-cooked with marinated chicken, saffron, fried onions","Mains",    340, False, False, True,  False, True,  720, "biryani,chicken,hyderabadi,dum,classic"),
+        ("Hyderabadi Mutton Biryani","Goat on the bone, slow-cooked in sealed handi with whole spices",               "Mains",    480, False, False, True,  False, True,  840, "biryani,mutton,hyderabadi,dum,classic"),
+        ("Donne Chicken Biryani", "Bangalore-style biryani in palm-leaf cup, jeera samba rice",                     "Mains",    280, False, False, True,  False, True,  680, "biryani,chicken,donne,bangalore,classic"),
+        ("Donne Mutton Biryani",  "Bangalore-style mutton biryani, fragrant short-grain rice",                      "Mains",    440, False, False, True,  False, True,  780, "biryani,mutton,donne,bangalore"),
+        ("Lucknowi Mutton Biryani","Awadhi-style with mild spices, kewra water, foiled and dum-cooked",             "Mains",    520, False, False, True,  False, False, 820, "biryani,mutton,lucknowi,awadhi"),
+        ("Andhra Chicken Biryani","Spicy Andhra-style biryani with extra heat",                                     "Mains",    320, False, False, True,  False, True,  720, "biryani,chicken,andhra,spicy"),
+        ("Veg Dum Biryani",       "Mixed vegetables in fragrant basmati, sealed-handi cooked",                      "Mains",    260, True,  False, True,  False, True,  580, "biryani,vegetarian,veg dum"),
+        ("Egg Biryani",           "Boiled eggs in spiced basmati with caramelised onions",                          "Mains",    240, False, False, True,  False, False, 560, "biryani,egg"),
+        ("Prawn Biryani",         "Marinated prawns in dum biryani, served with raita",                             "Mains",    480, False, False, True,  False, False, 640, "biryani,prawn,seafood"),
+        ("Paneer Biryani",        "Cottage cheese in dum biryani with cashew, mint, coriander",                     "Mains",    280, True,  False, True,  False, False, 620, "biryani,paneer,vegetarian"),
+        # Sides & Kebabs
+        ("Chicken 65",            "Crisp red-batter chicken with curry leaves and green chilli",                    "Starters", 320, False, False, False, False, True,  420, "chicken 65,starter,crispy,south indian"),
+        ("Chicken Lollipop (4 pc)","Frenched chicken wing drumettes, hot sauce glaze",                              "Starters", 280, False, False, False, False, True,  360, "chicken lollipop,starter,spicy"),
+        ("Apollo Fish",           "Boneless fish fry, Andhra spices, lemon",                                        "Starters", 320, False, False, True,  False, False, 380, "apollo fish,fish fry,andhra,seafood"),
+        ("Mutton Pepper Fry",     "Mutton with crushed black pepper, curry leaves",                                 "Starters", 420, False, False, True,  False, True,  480, "mutton pepper fry,starter,spicy"),
+        ("Galouti Kebab",         "Lucknowi melt-in-mouth minced mutton patties",                                   "Starters", 420, False, False, True,  False, False, 320, "galouti kebab,kebab,mutton,lucknowi"),
+        ("Mirchi ka Salan",       "Peanut-sesame gravy with whole chillies, biryani's traditional partner",         "Sides",    140, True,  True,  True,  False, True,  220, "salan,mirchi,biryani side,vegan"),
+        ("Raita",                 "Curd with cucumber, onion, roasted cumin, mint",                                 "Sides",     80, True,  False, True,  False, True,   80, "raita,curd,side"),
+        # Desserts
+        ("Double ka Meetha",      "Hyderabadi bread pudding in saffron milk",                                       "Desserts", 140, True,  False, False, False, True,  380, "double ka meetha,hyderabadi,dessert"),
+        ("Qubani ka Meetha",      "Stewed dried apricots with cream",                                               "Desserts", 160, True,  False, True,  False, False, 280, "qubani,apricot,hyderabadi,dessert"),
+        # Drinks
+        ("Sulaimani Chai",        "Spiced black tea with lemon, served in glass tumbler",                           "Drinks",    60, True,  True,  True,  True,  True,   30, "sulaimani,chai,tea,vegan"),
+        ("Irani Chai",            "Sweet milky tea, Hyderabadi style",                                              "Drinks",    70, True,  False, True,  False, True,  120, "irani chai,tea,hyderabadi"),
+        ("Lassi (Sweet)",         "Thick yogurt drink, classic accompaniment",                                      "Drinks",   120, True,  False, True,  False, True,  220, "lassi,yogurt,sweet"),
+    ],
+    "Indo-Chinese": [
+        # Starters
+        ("Gobi Manchurian (Dry)", "Cauliflower florets in spicy garlic-soy glaze, the Bangalore staple",            "Starters", 220, True,  True,  False, False, True,  340, "gobi manchurian,manchurian,vegetarian,vegan,classic,indo chinese"),
+        ("Paneer Manchurian (Dry)","Cottage cheese cubes in tangy manchurian sauce",                                "Starters", 280, True,  False, False, False, True,  420, "paneer manchurian,manchurian,vegetarian,indo chinese"),
+        ("Chilli Paneer (Dry)",   "Crispy paneer in green chilli-soy-garlic toss",                                  "Starters", 280, True,  False, False, False, True,  440, "chilli paneer,paneer,spicy,vegetarian,indo chinese"),
+        ("Chilli Chicken (Dry)",  "Battered chicken cubes in green chilli, capsicum, onion",                        "Starters", 320, False, False, False, False, True,  480, "chilli chicken,spicy,classic,indo chinese"),
+        ("Chicken Manchurian (Dry)","Crisp chicken balls in dark manchurian sauce",                                 "Starters", 320, False, False, False, False, True,  460, "chicken manchurian,manchurian,classic,indo chinese"),
+        ("Crispy Honey Chilli Potato","Sweet-spicy crisp potato fingers in honey-chilli glaze",                     "Starters", 240, True,  False, False, False, True,  420, "honey chilli potato,vegetarian,crispy,indo chinese"),
+        ("Dragon Chicken",        "Crisp chicken in dark spicy soy with cashew nuts",                               "Starters", 360, False, False, False, False, True,  520, "dragon chicken,spicy,indo chinese"),
+        ("Crispy Corn Pepper Salt","Battered corn kernels, pepper-salt seasoning, fried curry leaves",              "Starters", 240, True,  False, False, False, True,  380, "crispy corn,corn,vegetarian,indo chinese"),
+        # Soups
+        ("Veg Manchow Soup",      "Thick brown soup with crisp fried noodles on top",                               "Starters", 140, True,  True,  False, False, True,  220, "manchow soup,soup,vegan,vegetarian,indo chinese"),
+        ("Chicken Manchow Soup",  "Spicy brown soup with shredded chicken, crisp noodles",                          "Starters", 180, False, False, False, False, True,  280, "manchow soup,chicken,soup,indo chinese"),
+        ("Hot & Sour Veg Soup",   "Classic tangy-spicy clear soup with vegetables",                                 "Starters", 140, True,  True,  False, False, True,  180, "hot and sour,soup,vegan,indo chinese"),
+        ("Sweet Corn Chicken Soup","Velvety corn soup with shredded chicken",                                       "Starters", 180, False, False, False, False, False, 240, "sweet corn,soup,chicken,indo chinese"),
+        # Noodles & Rice
+        ("Veg Hakka Noodles",     "Stir-fried noodles with mixed vegetables, soy",                                  "Mains",    220, True,  True,  False, False, True,  520, "hakka noodles,noodles,vegan,vegetarian,classic,indo chinese"),
+        ("Chicken Hakka Noodles", "Hakka noodles with shredded chicken, vegetables",                                "Mains",    280, False, False, False, False, True,  580, "hakka noodles,noodles,chicken,indo chinese"),
+        ("Schezwan Veg Noodles",  "Noodles tossed in fiery schezwan paste",                                         "Mains",    240, True,  True,  False, False, True,  540, "schezwan noodles,noodles,spicy,vegan,indo chinese"),
+        ("Schezwan Chicken Noodles","Spicy schezwan noodles with chicken",                                          "Mains",    300, False, False, False, False, True,  600, "schezwan,noodles,chicken,spicy,indo chinese"),
+        ("Veg Fried Rice",        "Wok-fried rice with vegetables, soy, scallions",                                 "Mains",    200, True,  True,  False, False, True,  520, "fried rice,vegan,vegetarian,indo chinese"),
+        ("Chicken Fried Rice",    "Wok-fried rice with chicken, egg, vegetables",                                   "Mains",    260, False, False, False, False, True,  580, "fried rice,chicken,classic,indo chinese"),
+        ("Triple Schezwan Rice",  "Fried rice topped with noodles, schezwan gravy and crispy garnish",              "Mains",    320, True,  False, False, False, True,  720, "triple schezwan,rice,spicy,indo chinese"),
+        ("American Chopsuey",     "Crispy fried noodles topped with sweet-sour vegetable gravy",                    "Mains",    280, True,  False, False, False, True,  680, "chopsuey,american chopsuey,classic,indo chinese"),
+        # Gravies
+        ("Kung Pao Chicken",      "Diced chicken with peanuts, dried chillies, soy",                                "Mains",    360, False, False, False, False, False, 480, "kung pao,chicken,spicy,indo chinese"),
+        ("Schezwan Chicken Gravy","Chicken in dark spicy schezwan gravy",                                           "Mains",    360, False, False, False, False, True,  520, "schezwan chicken,gravy,spicy,indo chinese"),
+        ("Manchurian Gravy (Veg)","Veg manchurian balls in dark soy-garlic gravy",                                  "Mains",    260, True,  False, False, False, False, 460, "manchurian gravy,vegetarian,indo chinese"),
+        # Drinks
+        ("Lemon Iced Tea",        "Chilled black tea with lemon, mint, sugar syrup",                                "Drinks",   120, True,  True,  True,  True,  False,  80, "iced tea,lemon,vegan,drink"),
+        ("Fresh Lime Soda",       "Sweet, salt, or mix — chilled and fresh",                                        "Drinks",    80, True,  True,  True,  True,  False,  60, "lime soda,drink,vegan"),
+    ],
+    "Mughlai": [
+        # Kebabs (the heart of the menu)
+        ("Galouti Kebab",         "Lucknowi melt-in-mouth minced mutton with 100+ spices",                          "Starters", 440, False, False, True,  False, True,  340, "galouti,kebab,mutton,lucknowi,classic,mughlai"),
+        ("Tunday Kebab",          "Lucknow's iconic soft mutton kebab, slow-cooked on griddle",                     "Starters", 420, False, False, True,  False, True,  320, "tunday,kebab,mutton,lucknowi,classic"),
+        ("Kakori Kebab",          "Smooth seekh kebab from Awadh, fine-minced mutton",                              "Starters", 460, False, False, True,  False, True,  360, "kakori,seekh,kebab,mutton,awadhi"),
+        ("Murgh Reshmi Kebab",    "Silky chicken kebab, cream and cheese marinade",                                 "Starters", 380, False, False, True,  False, True,  380, "reshmi kebab,chicken,creamy,mughlai"),
+        ("Boti Kebab",            "Boneless mutton chunks in rich yogurt-saffron marinade",                         "Starters", 440, False, False, True,  False, False, 420, "boti kebab,mutton,kebab,mughlai"),
+        ("Burrah Kebab",          "Lamb chops, marinated overnight, charred on coals",                              "Starters", 520, False, False, True,  False, True,  580, "burrah kebab,lamb chop,mughlai"),
+        ("Shami Kebab",           "Patty of minced mutton, chana dal, whole spices",                                "Starters", 320, False, False, False, False, False, 280, "shami kebab,kebab,mutton,mughlai"),
+        ("Murgh Tikka",           "Bone-in chicken in tandoori marinade",                                           "Starters", 360, False, False, True,  False, True,  340, "chicken tikka,tandoor,mughlai"),
+        # Mains
+        ("Mughlai Chicken Korma", "Chicken in cashew-yogurt gravy with rose water, saffron",                        "Mains",    440, False, False, True,  False, True,  580, "korma,chicken,mughlai,creamy,classic"),
+        ("Mutton Nihari",         "Slow-stewed mutton in marrow-rich gravy, ginger garnish",                        "Mains",    520, False, False, True,  False, True,  680, "nihari,mutton,slow cooked,mughlai,classic"),
+        ("Murgh Musallam",        "Whole chicken in saffron-cashew gravy, traditional preparation",                 "Mains",    620, False, False, True,  False, False, 820, "musallam,chicken,whole chicken,mughlai"),
+        ("Lamb Korma",            "Lamb in almond-cream-saffron gravy, slow-cooked",                                "Mains",    580, False, False, True,  False, True,  720, "korma,lamb,creamy,mughlai"),
+        ("Awadhi Mutton Biryani", "Lucknowi-style biryani, mild and aromatic, dum-cooked",                          "Mains",    520, False, False, True,  False, True,  820, "biryani,mutton,awadhi,lucknowi,dum"),
+        ("Murgh Awadhi",          "Chicken in subtle awadhi gravy with saffron and rose",                           "Mains",    460, False, False, True,  False, False, 540, "chicken,awadhi,mughlai"),
+        ("Tehari (Veg Biryani)",  "Awadhi vegetarian biryani with potato, peas, whole spices",                      "Mains",    280, True,  False, True,  False, False, 620, "tehari,biryani,vegetarian,awadhi"),
+        # Breads
+        ("Sheermal",              "Saffron-milk leavened bread, slightly sweet",                                    "Sides",     80, True,  False, False, False, True,  220, "sheermal,bread,saffron,mughlai"),
+        ("Roomali Roti",          "Paper-thin wheat bread, traditional accompaniment to kebabs",                    "Sides",     60, True,  True,  False, True,  True,  120, "roomali,bread,thin,vegan,jain"),
+        ("Khasta Naan",           "Crisp layered naan with kalonji seeds",                                          "Sides",     90, True,  False, False, False, False, 240, "khasta naan,bread,mughlai"),
+        # Desserts
+        ("Sheer Khurma",          "Vermicelli pudding with dates, dry fruits — Eid classic",                        "Desserts", 160, True,  False, False, False, True,  340, "sheer khurma,dessert,mughlai,eid"),
+        ("Shahi Tukda",           "Saffron-milk-soaked fried bread with rabri and pistachio",                       "Desserts", 160, True,  False, False, False, True,  420, "shahi tukda,dessert,mughlai,classic"),
+        ("Phirni",                "Slow-cooked rice flour pudding, cardamom, served in clay pot",                   "Desserts", 140, True,  False, False, False, False, 280, "phirni,dessert,rice pudding,mughlai"),
+    ],
+    "Coastal": [
+        # Mangalorean / coastal Karnataka starters
+        ("Chicken Ghee Roast",    "Mangalore classic — chicken in red byadgi chilli-ghee paste",                    "Starters", 380, False, False, True,  False, True,  520, "ghee roast,chicken,mangalorean,classic,coastal"),
+        ("Mutton Pepper Fry",     "Mutton tossed with crushed pepper, coconut, curry leaves",                       "Starters", 440, False, False, True,  False, True,  540, "mutton pepper fry,coastal,mangalorean"),
+        ("Kane Rava Fry",         "Lady fish in semolina crust, shallow-fried",                                     "Starters", 420, False, False, False, False, True,  380, "kane fish,fish fry,mangalorean,seafood"),
+        ("Anjal Tawa Fry",        "Seer fish in coastal masala, griddle-cooked",                                    "Starters", 520, False, False, True,  False, True,  420, "anjal fish,seer fish,tawa fry,mangalorean,seafood"),
+        ("Prawn Sukka",           "Dry-roasted prawns with coconut, kokum, ground masala",                          "Starters", 420, False, False, True,  False, True,  380, "prawn sukka,coastal,mangalorean,seafood"),
+        ("Chicken Sukka",         "Dry chicken with grated coconut, curry leaves, kokum",                           "Starters", 360, False, False, True,  False, True,  420, "chicken sukka,mangalorean,coastal,classic"),
+        # Mains
+        ("Mangalorean Fish Curry","Pomfret in coconut-kokum curry with chilli, coriander",                          "Mains",    480, False, False, True,  False, True,  520, "fish curry,coastal,mangalorean,seafood,pomfret"),
+        ("Prawn Gassi",           "Mangalore prawn curry in coconut-tamarind gravy",                                "Mains",    460, False, False, True,  False, True,  480, "prawn gassi,coastal,mangalorean,seafood"),
+        ("Crab Masala",           "Whole crab in red coastal masala — eat with hands",                              "Mains",    620, False, False, True,  False, False, 540, "crab,coastal,seafood,mangalorean"),
+        ("Kori Rotti",            "Mangalorean — chicken curry over crisp rice flake rotis",                        "Mains",    340, False, False, True,  False, True,  580, "kori rotti,mangalorean,classic,chicken"),
+        ("Chicken Pulimunchi",    "Tangy-spicy chicken with tamarind and red chillies",                             "Mains",    380, False, False, True,  False, False, 460, "pulimunchi,chicken,coastal,mangalorean"),
+        ("Coastal Veg Curry",     "Mixed vegetables in coconut-curry leaf gravy",                                   "Mains",    280, True,  True,  True,  False, False, 320, "coastal veg,vegan,vegetarian,mangalorean"),
+        ("Egg Curry (Mangalore)", "Boiled eggs in spicy coconut gravy",                                             "Mains",    260, False, False, True,  False, False, 380, "egg curry,coastal,mangalorean"),
+        # Breads & Rice
+        ("Neer Dosa (3 pc)",      "Lacy thin rice-water crepes, served with chicken curry or chutney",              "Sides",    130, True,  True,  False, False, True,  280, "neer dosa,mangalorean,vegan,classic,coastal"),
+        ("Pundi (Steam Dumplings)","Rice-flour steamed dumplings with chicken curry",                               "Sides",    160, True,  True,  False, False, False, 240, "pundi,mangalorean,vegan,coastal"),
+        ("Goli Baje (3 pc)",      "Fluffy maida-curd fritters, an iconic Mangalore tea-time snack",                 "Starters",  80, True,  False, False, False, True,  280, "goli baje,mangalorean,fritter,snack"),
+        ("Plain Rice (Brown)",    "Coastal Karnataka short-grain matta rice",                                       "Sides",    120, True,  True,  True,  True,  False, 280, "rice,matta,vegan,coastal"),
+        # Desserts
+        ("Gadbad Ice Cream",      "Mangalorean multi-layer ice cream with fruits, jelly, nuts — a Bangalore favourite", "Desserts", 240, True, False, False, False, True,  520, "gadbad,ice cream,mangalorean,classic,dessert"),
+        ("Halbai",                "Slow-cooked rice flour-jaggery-coconut sweet, ghee-rich",                        "Desserts", 120, True,  False, False, False, False, 320, "halbai,coastal,karnataka,dessert"),
+        # Drinks
+        ("Solkadhi",              "Chilled coconut-kokum drink, digestive, pink-hued",                              "Drinks",   100, True,  True,  True,  True,  False,  80, "solkadhi,coastal,vegan,drink"),
+        ("Filter Coffee",         "Strong decoction with hot milk, frothy",                                         "Drinks",    50, True,  False, True,  False, True,   80, "filter coffee,coffee,south indian"),
+    ],
     "Italian": [
-        ("Bruschetta al Pomodoro",    "Toasted sourdough with San Marzano tomatoes, fresh basil, cold-press olive oil",   "Starters", 9,   True,  True,  False, True,  True,  180),
-        ("Burrata e Prosciutto",      "Creamy burrata with Parma ham, truffle honey, rocket salad",                       "Starters", 14,  False, False, True,  False, True,  310),
-        ("Calamari Fritti",           "Crispy fried calamari with lemon aioli and nduja dipping sauce",                   "Starters", 13,  False, False, False, False, False, 290),
-        ("Zuppa di Pomodoro",         "Slow-cooked tomato soup, basil oil, parmigiano crostini",                          "Starters", 10,  True,  False, True,  True,  False, 220),
-        ("Spaghetti Carbonara",       "Guanciale, Pecorino Romano, egg yolk, coarse black pepper",                        "Mains",    19,  False, False, False, False, True,  680),
-        ("Margherita Pizza",          "Fior di latte, San Marzano, fresh basil, extra virgin olive oil",                  "Mains",    17,  True,  False, False, True,  True,  620),
-        ("Osso Buco alla Milanese",   "Braised veal shank, saffron risotto, gremolata",                                   "Mains",    35,  False, False, True,  False, True,  890),
-        ("Risotto ai Funghi Porcini", "Carnaroli rice, dried porcini, truffle oil, parmigiano",                           "Mains",    24,  True,  False, True,  True,  False, 720),
-        ("Pappardelle al Cinghiale",  "Wide ribbon pasta, slow-cooked wild boar ragù, pecorino",                          "Mains",    26,  False, False, False, False, False, 750),
-        ("Branzino al Forno",         "Whole roasted sea bass, capers, olives, cherry tomatoes, herbs",                   "Mains",    32,  False, False, True,  True,  False, 540),
-        ("Tiramisu",                  "Espresso-soaked savoiardi, mascarpone cream, cocoa powder",                        "Desserts", 9,   True,  False, False, True,  True,  420),
-        ("Panna Cotta",               "Vanilla bean cream, wild berry coulis, mint",                                      "Desserts", 8,   True,  False, True,  True,  False, 310),
-        ("Affogato",                  "Double espresso poured over house-made vanilla gelato",                            "Desserts", 7,   True,  False, True,  True,  False, 210),
-        ("Aperol Spritz",             "Aperol, Prosecco DOC, soda water, orange",                                        "Drinks",   12,  True,  True,  True,  True,  True,  160),
-        ("Barolo Glass",              "Piedmontese Nebbiolo, 2019 vintage",                                               "Drinks",   14,  True,  True,  True,  True,  False, 130),
-        ("Espresso",                  "Double-shot Italian espresso",                                                     "Drinks",   4,   True,  True,  True,  True,  False, 5),
+        # Starters
+        ("Bruschetta al Pomodoro","Toasted ciabatta, San Marzano tomatoes, basil, EVOO",                            "Starters", 320, True,  True,  False, True,  True,  220, "bruschetta,italian,vegetarian,vegan,starter"),
+        ("Caprese di Bufala",     "Imported buffalo mozzarella, heirloom tomato, basil",                            "Starters", 460, True,  False, True,  True,  True,  310, "caprese,salad,italian,vegetarian"),
+        ("Calamari Fritti",       "Crispy fried calamari, lemon aioli, marinara",                                   "Starters", 440, False, False, False, False, False, 290, "calamari,seafood,italian,fried"),
+        ("Funghi al Forno",       "Baked portobello, garlic confit, taleggio, truffle oil",                         "Starters", 420, True,  False, True,  False, False, 280, "mushroom,italian,vegetarian,baked"),
+        # Pizza
+        ("Margherita Pizza",      "Fior di latte, San Marzano sauce, fresh basil, EVOO",                            "Mains",    420, True,  False, False, True,  True,  720, "pizza,margherita,italian,vegetarian,classic"),
+        ("Pepperoni Pizza",       "Spicy chicken pepperoni, mozzarella, oregano",                                   "Mains",    560, False, False, False, False, True,  890, "pizza,pepperoni,italian,meat"),
+        ("Funghi e Tartufo Pizza","Mixed mushrooms, mozzarella, truffle oil, rocket",                               "Mains",    620, True,  False, False, False, True,  820, "pizza,mushroom,truffle,italian,vegetarian"),
+        ("Quattro Formaggi",      "Mozzarella, gorgonzola, fontina, parmigiano",                                    "Mains",    580, True,  False, False, True,  False, 940, "pizza,cheese,italian,vegetarian,white"),
+        # Pasta
+        ("Spaghetti Carbonara",   "Guanciale, Pecorino Romano, egg yolk, black pepper — no cream",                  "Mains",    540, False, False, False, False, True,  720, "pasta,carbonara,italian"),
+        ("Penne all'Arrabbiata",  "Penne, garlic, chilli, San Marzano tomato, parsley",                             "Mains",    460, True,  True,  False, True,  False, 580, "pasta,penne,arrabbiata,italian,spicy,vegan"),
+        ("Pappardelle al Ragù",   "Wide ribbon pasta, slow-cooked ragù, parmigiano",                                "Mains",    580, False, False, False, False, True,  780, "pasta,ragu,italian"),
+        ("Mushroom Risotto",      "Carnaroli rice, porcini, parmigiano, white truffle oil",                         "Mains",    580, True,  False, True,  False, True,  680, "risotto,mushroom,italian,vegetarian"),
+        # Desserts
+        ("Tiramisu",              "Espresso-soaked savoiardi, mascarpone, cocoa, marsala",                          "Desserts", 360, True,  False, False, True,  True,  420, "tiramisu,dessert,italian,coffee"),
+        ("Panna Cotta",           "Vanilla cream, wild berry coulis, mint",                                         "Desserts", 320, True,  False, True,  True,  False, 310, "panna cotta,dessert,italian"),
+        # Drinks
+        ("Aperol Spritz",         "Aperol, Prosecco, soda, orange",                                                 "Drinks",   460, True,  True,  True,  True,  True,  160, "spritz,aperol,cocktail,italian"),
+        ("Negroni",               "Campari, gin, sweet vermouth, orange peel",                                      "Drinks",   500, True,  True,  True,  True,  True,  180, "negroni,cocktail,italian"),
+        ("Espresso",              "Double-shot Italian espresso",                                                   "Drinks",   180, True,  True,  True,  True,  False,   5, "espresso,coffee,italian"),
     ],
-    "Indian": [
-        ("Vegetable Samosa",          "Crispy pastry, spiced potato and pea filling, mint chutney",                       "Starters", 8,   True,  True,  False, True,  True,  220),
-        ("Chicken Tikka",             "Tandoor-charred chicken thigh, yogurt marinade, chilli oil",                       "Starters", 13,  False, False, True,  True,  True,  310),
-        ("Chaat Papdi",               "Crispy wafers, chickpeas, tamarind, yogurt, sev",                                  "Starters", 9,   True,  False, False, True,  False, 280),
-        ("Dal Shorba",                "Slow-cooked lentil soup, cumin tarka, coriander",                                  "Starters", 8,   True,  True,  True,  True,  False, 200),
-        ("Butter Chicken",            "Tandoor chicken in rich tomato-cream sauce, served with naan",                     "Mains",    20,  False, False, True,  True,  True,  780),
-        ("Dal Makhani",               "Black lentils slow-simmered overnight, cream, fenugreek",                          "Mains",    17,  True,  False, True,  True,  True,  620),
-        ("Lamb Rogan Josh",           "Kashmiri-spiced slow-braised lamb shanks, saffron rice",                           "Mains",    26,  False, False, True,  True,  False, 820),
-        ("Chicken Biryani",           "Dum-cooked basmati, saffron, whole spices, raita, mirchi ka salan",               "Mains",    24,  False, False, True,  True,  True,  950),
-        ("Paneer Tikka Masala",       "Grilled cottage cheese, bell pepper, spiced tomato gravy",                         "Mains",    19,  True,  False, True,  True,  False, 700),
-        ("Prawn Malai Curry",         "King prawns in coconut-milk curry, steamed basmati",                               "Mains",    28,  False, False, True,  True,  False, 680),
-        ("Gulab Jamun",               "Milk-solid dumplings in rose-cardamom syrup, vanilla ice cream",                  "Desserts", 7,   True,  False, False, True,  True,  380),
-        ("Mango Kulfi",               "Traditional frozen cream with Alphonso mango, pistachio",                          "Desserts", 8,   True,  False, True,  True,  False, 290),
-        ("Kheer",                     "Rice pudding, cardamom, saffron, rose petals, almonds",                            "Desserts", 6,   True,  False, True,  True,  False, 310),
-        ("Mango Lassi",               "Alphonso mango, yogurt, cardamom",                                                 "Drinks",   6,   True,  False, True,  True,  True,  220),
-        ("Masala Chai",               "Spiced black tea, ginger, cardamom, whole milk",                                   "Drinks",   4,   True,  False, True,  True,  True,  90),
-        ("Kingfisher Beer",           "Premium lager, 330ml bottle",                                                      "Drinks",   6,   True,  True,  True,  True,  False, 150),
-    ],
-    "Mexican": [
-        ("Guacamole & Chips",         "Hass avocados, jalapeño, lime, red onion, fresh-made tortilla chips",              "Starters", 10,  True,  True,  True,  True,  True,  310),
-        ("Elote Callejero",           "Street corn, cotija, chipotle mayo, chilli powder, lime",                          "Starters", 9,   True,  False, True,  True,  False, 280),
-        ("Queso Fundido",             "Melted Oaxacan cheese, chorizo, roasted peppers, corn tortillas",                  "Starters", 12,  False, False, True,  False, False, 420),
-        ("Tortilla Soup",             "Roasted tomato broth, pulled chicken, crispy tortilla strips, avocado",            "Starters", 10,  False, False, True,  True,  False, 320),
-        ("Tacos al Pastor",           "Achiote-marinated pork, pineapple, coriander, white onion, corn tortilla",         "Mains",    18,  False, False, True,  False, True,  580),
-        ("Enchiladas Verdes",         "Corn tortillas, pulled chicken, tomatillo salsa, crema, queso fresco",             "Mains",    20,  False, False, True,  False, False, 720),
-        ("Carnitas Burrito",          "Slow-cooked pork, black beans, rice, pico de gallo, guacamole",                   "Mains",    19,  False, False, False, False, True,  890),
-        ("Chiles Rellenos",           "Poblano pepper, Oaxacan cheese stuffing, walnut cream sauce",                      "Mains",    22,  True,  False, True,  True,  False, 680),
-        ("Carne Asada",               "Grilled skirt steak, chimichurri, roasted peppers, beans, rice",                  "Mains",    28,  False, False, True,  False, False, 760),
-        ("Camarones a la Diabla",     "Seared prawns, guajillo-arbol chilli sauce, lime, rice",                           "Mains",    26,  False, False, True,  True,  False, 520),
-        ("Tres Leches",               "Sponge cake soaked in three milks, whipped cream, strawberry",                     "Desserts", 8,   True,  False, False, True,  True,  440),
-        ("Churros con Chocolate",     "Cinnamon-dusted churros, Mexican dark chocolate dipping sauce",                    "Desserts", 9,   True,  False, False, True,  True,  380),
-        ("Margarita Clasica",         "Espolon Blanco tequila, lime, agave, Cointreau, salt rim",                        "Drinks",   13,  True,  True,  True,  True,  True,  180),
-        ("Horchata",                  "House-made rice milk, cinnamon, vanilla, ice",                                     "Drinks",   5,   True,  True,  True,  True,  True,  120),
-        ("Modelo Especial",           "Mexican lager, 355ml bottle",                                                      "Drinks",   6,   True,  True,  True,  True,  False, 150),
-    ],
-    "Japanese": [
-        ("Edamame",                   "Steamed salted edamame pods",                                                      "Starters", 6,   True,  True,  True,  True,  True,  120),
-        ("Gyoza",                     "Pan-fried pork and cabbage dumplings, ponzu dipping sauce",                        "Starters", 10,  False, False, False, False, True,  280),
-        ("Agedashi Tofu",             "Silken tofu in light dashi broth, grated daikon, katsuobushi",                     "Starters", 11,  True,  False, False, True,  False, 210),
-        ("Miso Soup",                 "White miso, tofu, wakame, spring onion",                                           "Starters", 5,   True,  True,  False, True,  True,  60),
-        ("Tonkotsu Ramen",            "18-hour pork broth, chashu pork belly, soft-boiled egg, nori, bamboo",             "Mains",    20,  False, False, False, False, True,  890),
-        ("Salmon Sashimi (8 pcs)",    "Premium Norwegian salmon, wasabi, pickled ginger, soy",                            "Mains",    24,  False, False, True,  True,  True,  320),
-        ("Chicken Katsu Curry",       "Panko-breaded chicken, Japanese curry sauce, steamed rice, pickles",               "Mains",    21,  False, False, False, False, True,  820),
-        ("Vegetable Tempura Set",     "Seasonal vegetables, light batter, tentsuyu dipping broth, rice",                  "Mains",    19,  True,  True,  False, True,  False, 640),
-        ("Wagyu Beef Don",            "A5 Wagyu slices over seasoned rice, truffle tare, onsen egg",                      "Mains",    38,  False, False, True,  False, True,  780),
-        ("Omakase Sushi (6 pcs)",     "Chef's selection of nigiri, seasonal and market-dependent",                        "Mains",    32,  False, False, True,  True,  True,  420),
-        ("Matcha Lava Cake",          "Dark chocolate and matcha centre, vanilla ice cream, red bean",                    "Desserts", 10,  True,  False, False, True,  True,  380),
-        ("Mochi Ice Cream (3 pcs)",   "Choice of matcha, mango, or yuzu filling",                                        "Desserts", 9,   True,  False, False, True,  True,  290),
-        ("Japanese Whisky",           "Suntory Toki, neat or on the rocks",                                               "Drinks",   14,  True,  True,  True,  True,  False, 110),
-        ("Yuzu Lemonade",             "Fresh yuzu, honey, soda water",                                                    "Drinks",   6,   True,  True,  True,  True,  True,  80),
-        ("Sapporo Draft",             "Japanese lager, 500ml",                                                            "Drinks",   7,   True,  True,  True,  True,  False, 180),
-    ],
-    "Chinese": [
-        ("Har Gow (4 pcs)",           "Steamed prawn dumplings, light soy dipping",                                       "Starters", 9,   False, False, False, False, True,  160),
-        ("Spring Rolls (3 pcs)",      "Crispy vegetable and pork rolls, sweet chilli sauce",                              "Starters", 8,   False, False, False, False, False, 280),
-        ("Wonton Soup",               "Hand-folded pork wontons, clear ginger broth, spring onion",                       "Starters", 9,   False, False, False, False, True,  220),
-        ("Edamame with Chilli Salt",  "Steamed edamame, Sichuan chilli salt",                                             "Starters", 6,   True,  True,  True,  True,  False, 120),
-        ("Peking Duck (half)",        "Traditional Peking duck, pancakes, cucumber, spring onion, hoisin",               "Mains",    38,  False, False, False, False, True,  1100),
-        ("Mapo Tofu",                 "Silken tofu, minced pork, Sichuan doubanjiang, numbing peppercorns",               "Mains",    18,  False, False, False, False, True,  520),
-        ("Kung Pao Chicken",          "Sichuan-style wok chicken, peanuts, dried chillies, Shaoxing wine",               "Mains",    21,  False, False, True,  False, True,  680),
-        ("Char Siu Pork",             "BBQ pork belly, jasmine rice, pickled vegetables",                                 "Mains",    22,  False, False, True,  False, False, 760),
-        ("Vegetable Chow Mein",       "Wok-fried egg noodles, bok choy, shiitake, bean sprouts",                         "Mains",    17,  True,  False, False, True,  False, 580),
-        ("Steamed Sea Bass",          "Whole sea bass, ginger, spring onion, sizzling soy oil",                          "Mains",    36,  False, False, True,  True,  False, 420),
-        ("Mango Pudding",             "Set mango cream, evaporated milk, fresh mango",                                    "Desserts", 7,   True,  False, True,  True,  True,  280),
-        ("Sesame Balls",              "Fried glutinous rice with lotus paste, sesame crust",                              "Desserts", 7,   True,  False, False, True,  False, 320),
-        ("Jasmine Tea Pot",           "Premium jasmine green tea, serves two",                                            "Drinks",   6,   True,  True,  True,  True,  True,  5),
-        ("Tsingtao Beer",             "Chinese lager, 330ml bottle",                                                      "Drinks",   5,   True,  True,  True,  True,  False, 150),
-        ("Lychee Martini",            "Vodka, lychee liqueur, fresh lychee, rose water",                                  "Drinks",   13,  True,  True,  True,  True,  False, 190),
-    ],
-    "Mediterranean": [
-        ("Mezze Platter (for 2)",     "Hummus, baba ganoush, tzatziki, stuffed vine leaves, pita",                       "Starters", 16,  True,  False, False, True,  True,  520),
-        ("Falafel",                   "Hand-rolled chickpea falafel, tahini, pomegranate molasses",                       "Starters", 10,  True,  True,  True,  True,  True,  320),
-        ("Grilled Halloumi",          "Cypriot halloumi, watermelon, mint, chilli flakes, lemon",                        "Starters", 12,  True,  False, True,  True,  False, 380),
-        ("Lentil Soup",               "Red lentil, cumin, lemon, warm pitta",                                            "Starters", 9,   True,  True,  True,  True,  True,  280),
-        ("Lamb Kofta",                "Spiced minced lamb skewers, flatbread, harissa, yogurt, salad",                   "Mains",    24,  False, False, True,  True,  True,  720),
-        ("Grilled Sea Bream",         "Whole sea bream, chermoula, roasted vegetables, couscous",                        "Mains",    30,  False, False, True,  True,  False, 580),
-        ("Chicken Shawarma",          "Slow-rotisserie chicken, garlic sauce, pickles, sumac onions, flatbread",          "Mains",    22,  False, False, False, True,  True,  760),
-        ("Moussaka",                  "Layered aubergine, spiced lamb, béchamel, tomato",                                 "Mains",    23,  False, False, False, False, False, 820),
-        ("Spanakopita",               "Spinach and feta filo pastry, Greek salad",                                       "Mains",    19,  True,  False, False, True,  False, 680),
-        ("Lamb Tagine",               "Moroccan slow-cooked lamb, preserved lemon, olives, couscous",                    "Mains",    28,  False, False, True,  True,  False, 890),
-        ("Baklava",                   "Layered filo, pistachio, rose-water honey syrup",                                  "Desserts", 8,   True,  False, False, True,  True,  480),
-        ("Greek Yogurt & Honey",      "Strained yogurt, Hymettus honey, candied walnut",                                  "Desserts", 7,   True,  False, True,  True,  False, 280),
-        ("Turkish Coffee",            "Traditional copper-pot brewed coffee, lokum",                                      "Drinks",   5,   True,  True,  True,  True,  True,  10),
-        ("Pomegranate Spritz",        "Pomegranate juice, rose water, soda, mint",                                       "Drinks",   7,   True,  True,  True,  True,  True,  90),
-        ("Ouzo",                      "Greek anise spirit, served neat with ice and water",                               "Drinks",   9,   True,  True,  True,  True,  False, 100),
-    ],
-    "Thai": [
-        ("Satay Skewers (4 pcs)",    "Grilled chicken, peanut sauce, pickled cucumber",                                  "Starters", 11,  False, False, True,  True,  True,  280),
-        ("Som Tum",                   "Green papaya salad, cherry tomatoes, dried shrimp, lime, palm sugar",              "Starters", 10,  False, False, True,  False, True,  180),
-        ("Tom Kha Soup",              "Coconut milk, galangal, lemongrass, mushroom, chicken",                            "Starters", 11,  False, False, True,  True,  False, 310),
-        ("Spring Rolls (3 pcs)",      "Rice paper, vermicelli, prawn, herbs, hoisin-peanut dip",                         "Starters", 9,   False, False, True,  True,  False, 220),
-        ("Pad Thai",                  "Wok rice noodles, prawn or chicken, egg, bean sprouts, tamarind, peanuts",        "Mains",    19,  False, False, True,  True,  True,  780),
-        ("Green Curry",               "Coconut cream, Thai aubergine, bamboo shoots, kaffir lime, jasmine rice",         "Mains",    20,  True,  False, True,  True,  True,  680),
-        ("Massaman Lamb",             "Slow-braised lamb, coconut milk, potatoes, peanuts, cardamom",                    "Mains",    26,  False, False, True,  True,  False, 820),
-        ("Pad See Ew",                "Flat rice noodles, soy-glazed chicken, egg, broccoli, wok breath",                "Mains",    18,  False, False, True,  True,  False, 710),
-        ("Basil Stir-Fry (Pad Kra Pao)", "Wok minced chicken or pork, Thai basil, chillies, fish sauce, fried egg",   "Mains",    20,  False, False, True,  False, True,  720),
-        ("Steamed Sea Bass",          "Whole sea bass in lime-garlic-chilli dressing, lemongrass",                       "Mains",    32,  False, False, True,  True,  False, 420),
-        ("Mango Sticky Rice",         "Glutinous rice, coconut cream, fresh Alphonso mango",                             "Desserts", 9,   True,  True,  True,  True,  True,  480),
-        ("Black Sesame Ice Cream",    "House-churned black sesame, toasted sesame brittle",                              "Desserts", 8,   True,  False, True,  True,  False, 310),
-        ("Thai Iced Tea",             "Ceylon tea, condensed milk, star anise, served over ice",                         "Drinks",   5,   True,  False, True,  True,  True,  180),
-        ("Lychee Cooler",             "Fresh lychee, lime, soda, mint",                                                  "Drinks",   6,   True,  True,  True,  True,  True,  90),
-        ("Singha Beer",               "Thai lager, 330ml bottle",                                                        "Drinks",   6,   True,  True,  True,  True,  False, 150),
-    ],
-    "American": [
-        ("Loaded Potato Skins",       "Crispy potato skins, cheddar, bacon bits, sour cream, chives",                   "Starters", 11,  False, False, True,  False, False, 420),
-        ("Buffalo Wings (8 pcs)",     "Crispy wings, Frank's RedHot sauce, blue cheese dip, celery",                    "Starters", 14,  False, False, True,  False, True,  580),
-        ("Clam Chowder",              "New England style, sourdough bread bowl, bacon, chives",                          "Starters", 13,  False, False, False, False, False, 480),
-        ("Caesar Salad",              "Romaine, house-made Caesar dressing, parmigiano, focaccia croutons",              "Starters", 12,  True,  False, False, True,  True,  340),
-        ("Wagyu Smash Burger",        "Double Wagyu patty, American cheese, pickles, onion, house sauce, brioche bun",  "Mains",    22,  False, False, False, False, True,  1100),
-        ("BBQ Baby Back Ribs (half)", "Slow-smoked pork ribs, house bourbon-molasses glaze, coleslaw, fries",           "Mains",    28,  False, False, True,  False, True,  1250),
-        ("Lobster Roll",              "Cold Maine lobster, tarragon mayo, butter-toasted brioche, fries",                "Mains",    34,  False, False, False, False, True,  720),
-        ("Mac & Cheese",              "Cavatappi pasta, four-cheese béchamel, panko crust, truffle oil",                 "Mains",    19,  True,  False, False, True,  False, 890),
-        ("NY Strip Steak (10oz)",     "28-day dry-aged strip, garlic butter, fries, peppercorn sauce",                  "Mains",    42,  False, False, True,  False, True,  920),
-        ("Grilled Salmon",            "Atlantic salmon, lemon-caper butter, seasonal vegetables, mashed potatoes",       "Mains",    29,  False, False, True,  False, False, 680),
-        ("Banana Pudding",            "Layers of vanilla custard, Nilla wafers, fresh banana, whipped cream",           "Desserts", 9,   True,  False, False, True,  True,  520),
-        ("Brownie Sundae",            "Warm fudge brownie, vanilla ice cream, hot fudge, peanuts",                      "Desserts", 11,  True,  False, False, True,  False, 680),
-        ("Old Fashioned",             "Woodford Reserve bourbon, Angostura bitters, orange, Luxardo cherry",            "Drinks",   14,  True,  True,  True,  True,  False, 180),
-        ("Arnold Palmer",             "Half unsweetened iced tea, half fresh lemonade",                                  "Drinks",   5,   True,  True,  True,  True,  True,  80),
-        ("Local Craft IPA",           "Rotating tap selection from local New York breweries",                           "Drinks",   8,   True,  True,  True,  True,  False, 200),
-    ],
-    "French": [
-        ("French Onion Soup",         "Caramelised onion, beef broth, Gruyère crouton, flambéed",                       "Starters", 13,  True,  False, False, False, True,  380),
-        ("Escargots de Bourgogne",    "Six snails, garlic-parsley butter, baguette",                                     "Starters", 16,  False, False, True,  False, False, 310),
-        ("Steak Tartare",             "Hand-cut beef tenderloin, cornichons, capers, Dijon, quail egg, toast",           "Starters", 18,  False, False, False, False, False, 380),
-        ("Vichyssoise",               "Chilled leek and potato soup, crème fraîche, chives",                            "Starters", 11,  True,  False, True,  True,  False, 280),
-        ("Duck Confit",               "Slow-cooked duck leg, Puy lentils, lardon, Dijon jus",                           "Mains",    32,  False, False, True,  False, True,  980),
-        ("Coq au Vin",                "Free-range chicken, Burgundy red wine, mushrooms, pearl onions, lardons",        "Mains",    29,  False, False, False, False, True,  860),
-        ("Bouillabaisse",             "Provençal fish stew, saffron broth, rouille, grilled bread",                     "Mains",    36,  False, False, True,  True,  False, 720),
-        ("Ratatouille",               "Slow-roasted Provençal vegetables, herbed olive oil, goat cheese",               "Mains",    22,  True,  True,  True,  True,  False, 480),
-        ("Steak Frites",              "250g entrecôte, béarnaise or au poivre, pommes frites",                          "Mains",    38,  False, False, True,  False, True,  1050),
-        ("Sole Meunière",             "Dover sole, brown butter, lemon, capers, parsley",                               "Mains",    42,  False, False, True,  True,  False, 580),
-        ("Crème Brûlée",              "Madagascan vanilla custard, caramelised sugar crust",                            "Desserts", 10,  True,  False, True,  True,  True,  420),
-        ("Profiteroles",              "Choux pastry, Chantilly cream, warm chocolate sauce",                            "Desserts", 9,   True,  False, False, True,  False, 480),
-        ("Cheese Board",              "Seasonal selection of five cheeses, quince, walnuts, crackers",                  "Desserts", 18,  True,  False, False, False, False, 520),
-        ("Kir Royale",                "Crème de cassis, Champagne",                                                     "Drinks",   14,  True,  True,  True,  True,  False, 130),
-        ("Côtes du Rhône Glass",      "Southern Rhône Grenache blend",                                                  "Drinks",   12,  True,  True,  True,  True,  False, 120),
-        ("Café au Lait",              "Double espresso, steamed whole milk",                                             "Drinks",   5,   True,  False, True,  True,  False, 80),
-    ],
-    "Korean": [
-        ("Kimchi & Banchan",          "House-fermented kimchi, spinach namul, bean sprouts, seaweed",                   "Starters", 8,   True,  True,  True,  True,  True,  180),
-        ("Japchae",                   "Glass noodles, stir-fried vegetables, sesame, soy",                              "Starters", 11,  True,  True,  True,  True,  False, 310),
-        ("Korean Fried Chicken (6 pcs)","Double-fried wings in soy-garlic or yangnyeom sauce",                         "Starters", 14,  False, False, False, False, True,  480),
-        ("Doenjang Jjigae",           "Fermented soybean paste stew, tofu, mushrooms, courgette",                       "Starters", 9,   True,  False, False, True,  False, 220),
-        ("KBBQ Wagyu Short Rib",      "A5 Wagyu, tableside grill, ssam lettuce, perilla, doenjang",                    "Mains",    44,  False, False, True,  False, True,  950),
-        ("Bibimbap",                  "Stone pot rice, seasonal vegetables, gochujang, sesame oil, fried egg",          "Mains",    18,  True,  False, True,  True,  True,  720),
-        ("Samgyeopsal (Pork Belly)",  "Thick-cut pork belly, tableside grill, kimchi, ssamjang",                       "Mains",    26,  False, False, True,  False, True,  880),
-        ("Spicy Seafood Stew (Haemul Jjigae)", "Prawns, squid, clams, tofu, gochugaru broth",                         "Mains",    28,  False, False, True,  False, False, 620),
-        ("Dakgalbi",                  "Spicy stir-fried chicken, rice cakes, cabbage, gochujang",                       "Mains",    22,  False, False, False, False, True,  760),
-        ("Tofu Sundubu Jjigae",       "Silken tofu, mushrooms, egg, gochugaru, anchovy broth",                         "Mains",    19,  True,  False, True,  False, False, 480),
-        ("Patbingsu",                 "Shaved ice, sweetened red bean, tteok, condensed milk, fresh fruit",             "Desserts", 10,  True,  False, False, True,  True,  420),
-        ("Hoddeok",                   "Pan-fried sweet pancake, brown sugar, cinnamon, walnut filling",                 "Desserts", 7,   True,  False, False, True,  False, 380),
-        ("Soju",                      "Korean rice spirit, 360ml bottle, served chilled",                               "Drinks",   12,  True,  True,  True,  True,  False, 280),
-        ("Sikhye",                    "Traditional sweet rice punch, served cold",                                       "Drinks",   5,   True,  True,  True,  True,  True,  110),
-        ("Korean Plum Wine (Maesil)", "Semi-sweet plum wine, served over ice",                                         "Drinks",   8,   True,  True,  True,  True,  False, 130),
-    ],
-    "Middle Eastern": [
-        ("Hummus Masabacha",          "Warm whole chickpeas, tahini, lemon, olive oil, paprika, warm pitta",            "Starters", 10,  True,  True,  True,  True,  True,  320),
-        ("Fattoush Salad",            "Crispy pitta, tomato, cucumber, sumac dressing, pomegranate",                    "Starters", 11,  True,  True,  True,  True,  True,  280),
-        ("Kibbeh (4 pcs)",            "Ground lamb and bulgur shell, pine nuts, cinnamon, yogurt dip",                  "Starters", 12,  False, False, False, True,  False, 380),
-        ("Moutabal",                  "Smoky aubergine with tahini, pomegranate seeds, olive oil",                      "Starters", 9,   True,  True,  True,  True,  True,  220),
-        ("Mixed Shawarma Platter",    "Chicken and lamb shawarma, garlic sauce, tahini, pickles, flatbread",            "Mains",    26,  False, False, False, True,  True,  920),
-        ("Lamb Ouzi",                 "Slow-roasted whole lamb shoulder, saffron rice, toasted nuts, yogurt",           "Mains",    34,  False, False, True,  True,  True,  1050),
-        ("Chicken Mansaf",            "Jordanian feast — saffron rice, jameed sauce, almonds, pine nuts",              "Mains",    28,  False, False, True,  True,  False, 880),
-        ("Falafel Plate",             "Eight falafels, hummus, tabbouleh, pitta, tahini",                               "Mains",    18,  True,  True,  True,  True,  True,  680),
-        ("Grilled Sea Bass",          "Whole sea bass, chermoula, roasted vegetables, couscous",                        "Mains",    32,  False, False, True,  True,  False, 580),
-        ("Vegetarian Moghrabieh",     "Lebanese pearl couscous, caramelised onions, chickpeas, warm spices",            "Mains",    20,  True,  True,  True,  True,  True,  620),
-        ("Kunafa",                    "Shredded filo, Nabulsi cheese, rose-water syrup, pistachio",                    "Desserts", 9,   True,  False, False, True,  True,  520),
-        ("Umm Ali",                   "Egyptian bread pudding, cream, pistachios, coconut",                             "Desserts", 8,   True,  False, False, True,  False, 480),
-        ("Mint Tea",                  "Pot of Moroccan mint tea, sugar on the side",                                    "Drinks",   5,   True,  True,  True,  True,  True,  20),
-        ("Jallab",                    "Rose water, grape juice, grenadine, pine nuts, raisins",                         "Drinks",   6,   True,  True,  True,  True,  True,  120),
-        ("Lebanese Wine",             "Glass of Ksara Réserve du Couvent, Lebanon",                                    "Drinks",   12,  True,  True,  True,  False, False, 120),
-    ],
-    "Vietnamese": [
-        ("Goi Cuon (Fresh Rolls, 2 pcs)", "Rice paper, prawn, pork, vermicelli, herb garden, hoisin-peanut dip",       "Starters", 9,   False, False, True,  False, True,  220),
-        ("Cha Gio (Fried Rolls, 3 pcs)", "Pork, vermicelli, wood-ear mushroom, crispy rice paper",                    "Starters", 10,  False, False, False, False, False, 280),
-        ("Bun Bo Hue Soup",           "Spicy lemongrass beef broth, pork knuckle, rice noodles",                       "Starters", 11,  False, False, True,  False, False, 380),
-        ("Goi Ga",                    "Poached chicken salad, cabbage, carrot, Vietnamese herbs, crispy shallots",     "Starters", 12,  False, False, True,  False, False, 280),
-        ("Pho Bo (Beef)",             "24-hour bone broth, rice noodles, brisket, tendon, star anise, cinnamon",       "Mains",    18,  False, False, True,  False, True,  680),
-        ("Pho Chay (Vegetarian)",     "Mushroom and vegetable broth, tofu, rice noodles, fresh herbs",                 "Mains",    16,  True,  True,  True,  True,  True,  480),
-        ("Banh Mi Thit",              "Baguette, house pâté, char siu pork, pickled daikon, jalapeño, mayo",           "Mains",    14,  False, False, False, False, True,  580),
-        ("Bun Cha",                   "Hanoi pork meatballs in dipping broth, vermicelli, herbs, fried spring roll",   "Mains",    20,  False, False, True,  False, True,  720),
-        ("Com Tam Suon Nuong",        "Broken rice, grilled pork chop, fried egg, pickles, spring rolls",              "Mains",    22,  False, False, True,  False, False, 880),
-        ("Ca Kho To",                 "Caramelised fish claypot, ginger, spring onion, jasmine rice",                  "Mains",    24,  False, False, True,  True,  False, 580),
-        ("Che Ba Mau",                "Three-colour dessert — pandan jelly, red bean, mung bean, coconut milk",        "Desserts", 7,   True,  True,  True,  True,  True,  320),
-        ("Banh Flan",                 "Vietnamese egg flan, dark caramel, strong coffee drizzle",                      "Desserts", 7,   True,  False, True,  True,  False, 280),
-        ("Vietnamese Iced Coffee",    "Robusta drip coffee, sweetened condensed milk, ice",                            "Drinks",   5,   True,  False, True,  True,  True,  120),
-        ("Sinh To Xoai",              "Fresh mango smoothie, coconut cream",                                            "Drinks",   6,   True,  True,  True,  True,  True,  180),
-        ("Bia Saigon",                "Vietnamese lager, 330ml bottle",                                                "Drinks",   5,   True,  True,  True,  True,  False, 150),
+    "Continental": [
+        # All-day cafe
+        ("Eggs Benedict",         "Poached eggs, ham, hollandaise on English muffin",                               "Mains",    420, False, False, False, False, True,  620, "eggs benedict,brunch,continental,classic"),
+        ("Avocado Toast",         "Smashed avocado, sourdough, chilli flakes, poached egg",                         "Mains",    400, False, False, False, False, True,  480, "avocado toast,brunch,continental"),
+        ("Belgian Waffle",        "Crisp Liège waffle, maple syrup, berries, whipped cream",                        "Mains",    380, True,  False, False, True,  True,  580, "waffle,brunch,sweet,continental"),
+        ("Classic Cheeseburger",  "Beef patty, cheddar, lettuce, tomato, brioche, fries",                           "Mains",    480, False, False, False, False, True,  920, "burger,cheeseburger,american,beef"),
+        ("Chicken Burger",        "Buttermilk-fried chicken, slaw, pickles, brioche",                               "Mains",    420, False, False, False, False, True,  860, "burger,chicken,fried"),
+        ("Beyond Burger (Vegan)", "Plant-based patty, vegan cheese, avocado, lettuce",                              "Mains",    560, True,  True,  False, True,  False, 720, "burger,vegan,vegetarian,plant based"),
+        ("Mediterranean Bowl",    "Quinoa, roasted veg, feta, olives, hummus, lemon-tahini",                        "Mains",    480, True,  False, True,  True,  True,  520, "bowl,quinoa,mediterranean,vegetarian,healthy"),
+        ("Buddha Bowl",           "Brown rice, edamame, avocado, chickpeas, pickled veg, tahini",                   "Mains",    460, True,  True,  False, True,  True,  580, "bowl,buddha,vegan,vegetarian,healthy"),
+        ("Smoked Salmon Bagel",   "Cured salmon, cream cheese, capers, dill, NY bagel",                             "Mains",    540, False, False, False, False, True,  580, "salmon,bagel,brunch,continental"),
+        ("Pesto Pasta",           "Penne, fresh basil pesto, pine nuts, parmesan, cherry tomatoes",                 "Mains",    440, True,  False, False, False, True,  680, "pasta,pesto,continental,vegetarian"),
+        ("Grilled Chicken Caesar","Romaine, anchovy dressing, croutons, parmesan, grilled chicken",                 "Mains",    480, False, False, False, False, True,  480, "salad,caesar,chicken,continental"),
+        # Sides
+        ("Truffle Fries",         "Hand-cut fries, truffle oil, parmesan",                                          "Sides",    280, True,  False, False, True,  True,  480, "fries,truffle,vegetarian,sides"),
+        ("Garden Salad",          "Mixed leaves, cucumber, cherry tomato, vinaigrette",                             "Sides",    260, True,  True,  True,  True,  False, 180, "salad,vegan,sides"),
+        # Desserts
+        ("Chocolate Lava Cake",   "Warm dark chocolate cake, molten centre, vanilla ice cream",                     "Desserts", 360, True,  False, False, True,  True,  680, "lava cake,chocolate,dessert,continental"),
+        ("New York Cheesecake",   "Baked vanilla cheesecake, biscuit base, berry compote",                          "Desserts", 360, True,  False, False, True,  True,  520, "cheesecake,dessert,continental,classic"),
+        # Drinks
+        ("Cappuccino",            "Double espresso, steamed milk, fine foam",                                       "Drinks",   180, True,  False, True,  False, True,  120, "cappuccino,coffee,continental"),
+        ("Cold Brew",             "12-hour cold-brewed coffee, single origin, served black",                        "Drinks",   220, True,  True,  True,  True,  True,   10, "cold brew,coffee,continental"),
+        ("Fresh Orange Juice",    "Hand-pressed Valencia oranges, no sugar",                                        "Drinks",   200, True,  True,  True,  True,  False, 110, "orange juice,fresh,continental,non alcoholic"),
+        ("House White (Glass)",   "Sauvignon Blanc — crisp, citrus and gooseberry",                                 "Drinks",   460, True,  True,  True,  True,  False, 130, "wine,white,continental"),
+        ("House Red (Glass)",     "Shiraz — medium-bodied, plum and pepper",                                        "Drinks",   460, True,  True,  True,  True,  False, 140, "wine,red,continental"),
     ],
 }
+
+
+# ── Realistic popularity distribution ────────────────────────────────────────
+def _derive_rating(pop_score: float) -> float:
+    base = 3.2 + (pop_score / 100.0) * 1.6
+    noise = random.uniform(-0.15, 0.15)
+    return round(max(3.0, min(4.9, base + noise)), 1)
+
+
+def _derive_reviews(pop_score: float) -> int:
+    base = 40 + (pop_score / 100.0) ** 1.5 * 2400
+    noise = random.uniform(0.7, 1.3)
+    return int(max(20, base * noise))
+
+
+def _draw_popularity() -> float:
+    bucket = random.random()
+    if bucket < 0.20:
+        return round(random.uniform(82, 97), 1)   # flagship
+    if bucket < 0.70:
+        return round(random.uniform(55, 81), 1)   # middle
+    return round(random.uniform(30, 54), 1)       # lower tier
+
+
+def _build_dish_tags(name: str, cuisine: str, raw_tags: str, veg: bool, vegan: bool, gf: bool) -> str:
+    parts = {t.strip().lower() for t in (raw_tags or "").split(",") if t.strip()}
+    parts.add(cuisine.lower())
+    if veg:   parts.add("vegetarian")
+    if vegan: parts.add("vegan")
+    if gf:    parts.add("gluten free")
+    return ",".join(sorted(parts))
+
+
+# ── Branch distribution — Indian-majority ──────────────────────────────────────
+# 25 branches total. North/South Indian + Biryani dominate; continental is small.
+BRANCHES_BY_CUISINE = {
+    "North Indian": 5,
+    "South Indian": 4,
+    "Biryani":      4,
+    "Indo-Chinese": 3,
+    "Mughlai":      3,
+    "Coastal":      2,
+    "Italian":      2,
+    "Continental":  2,
+}
+assert sum(BRANCHES_BY_CUISINE.values()) == 25, "branch distribution must total 25"
 
 
 def seed_branches_and_menus(conn):
+    """Wipe and rebuild branches + menus. Idempotent — safe to run repeatedly."""
     conn.execute("DELETE FROM menu_items")
     conn.execute("DELETE FROM reservations")
     conn.execute("DELETE FROM occasion_crm")
     conn.execute("DELETE FROM dropoffs")
+    conn.execute("DELETE FROM packages")
+    conn.execute("DELETE FROM agent_traces")
+    conn.execute("DELETE FROM agent_turns")
+    conn.execute("DELETE FROM search_failures")
+    conn.execute("DELETE FROM competitor_mentions")
     conn.execute("DELETE FROM branches")
 
     hood_seq: dict = {}
     all_branch_rows = []
     all_menu_rows = []
 
-    cuisine_counts = {c: 6 for c in CUISINES}
-    for c in CUISINES[-3:]:
-        cuisine_counts[c] = 7
-
-    for cuisine, count in cuisine_counts.items():
-        hoods = random.sample(NEIGHBORHOODS, min(count, len(NEIGHBORHOODS)))
-        if count > len(NEIGHBORHOODS):
-            hoods += random.sample(NEIGHBORHOODS, count - len(NEIGHBORHOODS))
+    for cuisine in CUISINES:
+        count = BRANCHES_BY_CUISINE[cuisine]
+        hoods = random.sample(NEIGHBORHOODS, count)
 
         for hood in hoods:
             hood_seq.setdefault(hood, 0)
@@ -289,110 +412,182 @@ def seed_branches_and_menus(conn):
             code = f"GF-{NEIGHBORHOOD_ABBREV[hood]}-{hood_seq[hood]:02d}"
             name = f"GoodFoods {hood} — {CUISINE_LABEL[cuisine]}"
 
+            # Coordinates: jitter ~400m around the neighbourhood centroid
             base_lat, base_lon = NEIGHBORHOOD_COORDS[hood]
-            lat = round(base_lat + random.uniform(-0.008, 0.008), 6)
-            lon = round(base_lon + random.uniform(-0.008, 0.008), 6)
+            lat = round(base_lat + random.uniform(-0.004, 0.004), 6)
+            lon = round(base_lon + random.uniform(-0.004, 0.004), 6)
 
             num_str = random.randint(10, 999)
-            street = random.choice(["Main St","Park Ave","Broadway","5th Ave","Lexington Ave",
-                                    "Madison Ave","7th Ave","Hudson St","Greenwich Ave","Spring St"])
-            address = f"{num_str} {street}, {hood}"
-            phone = f"+1 (212) {random.randint(200,999)}-{random.randint(1000,9999)}"
+            street  = random.choice(STREETS.get(hood, ["Main Road"]))
+            address = f"{num_str} {street}, {hood}, Bangalore"
+            phone = f"+91 80 {random.randint(2200,4999)} {random.randint(1000,9999)}"
 
-            capacity = random.choice([30, 40, 50, 60, 70, 80, 90, 100, 110, 120])
-            tables = capacity // 4
-            rating = round(random.uniform(3.8, 4.8), 1)
-            reviews = random.randint(80, 1200)
-            price = random.randint(1, 4)
+            # Realistic seating by cuisine
+            if cuisine == "South Indian":
+                capacity = random.choice([50, 60, 70, 80, 90])   # tiffin rooms — big
+            elif cuisine == "Biryani":
+                capacity = random.choice([60, 70, 80, 100, 120]) # biryani houses — big
+            elif cuisine in ("Italian", "Continental"):
+                capacity = random.choice([40, 50, 60, 70])       # smaller, more intimate
+            elif cuisine == "Mughlai":
+                capacity = random.choice([60, 80, 100])          # mid-upmarket
+            else:
+                capacity = random.choice([50, 60, 70, 80, 100])
+            tables = max(8, capacity // 4)
 
-            veg = int(random.random() < 0.65)
-            vegan = int(veg and random.random() < 0.5)
-            gf = int(random.random() < 0.45)
-            halal = int(random.random() < (0.80 if cuisine in ("Middle Eastern","Indian") else 0.20))
-            kosher = int(random.random() < 0.10)
-            park = int(random.random() < 0.50)
-            outdoor = int(random.random() < 0.45)
-            valet = int(price >= 3 and random.random() < 0.4)
+            popularity = _draw_popularity()
+            rating  = _derive_rating(popularity)
+            reviews = _derive_reviews(popularity)
+
+            # Price tiers by cuisine — realistic for Bangalore
+            if cuisine == "South Indian":
+                price = random.choice([1, 1, 2])                 # tiffin places skew cheap
+            elif cuisine == "Indo-Chinese":
+                price = random.choice([2, 2, 3])
+            elif cuisine in ("North Indian", "Biryani", "Coastal"):
+                price = random.choice([2, 2, 3])
+            elif cuisine == "Mughlai":
+                price = random.choice([3, 3, 4])                 # upmarket Indian
+            elif cuisine == "Italian":
+                price = random.choice([3, 3, 4])
+            elif cuisine == "Continental":
+                price = random.choice([2, 3, 3])
+            else:
+                price = random.choice([2, 3])
+
+            # Dietary flags — what's actually true per cuisine
+            veg = 1
+            # Vegan options
+            if cuisine in ("South Indian", "Continental", "Italian"):
+                vegan = 1 if random.random() < 0.80 else 0
+            elif cuisine in ("North Indian", "Indo-Chinese", "Coastal"):
+                vegan = 1 if random.random() < 0.55 else 0
+            else:
+                vegan = 1 if random.random() < 0.30 else 0
+            gf = 1 if random.random() < 0.60 else 0
+            # Halal — Mughlai is almost always halal in BLR; biryani very common
+            if cuisine == "Mughlai":
+                halal = 1
+            elif cuisine == "Biryani":
+                halal = 1 if random.random() < 0.85 else 0
+            elif cuisine in ("North Indian", "Indo-Chinese", "Coastal"):
+                halal = 1 if random.random() < 0.55 else 0
+            else:
+                halal = 1 if random.random() < 0.30 else 0
+            kosher = 0
+            # Jain — common signal in Bangalore for North Indian, South Indian, Italian
+            if cuisine in ("North Indian", "South Indian", "Italian"):
+                jain = 1 if random.random() < 0.55 else 0
+            else:
+                jain = 0
+
+            parking = 1 if random.random() < 0.65 else 0
+            outdoor = 1 if random.random() < 0.40 else 0
+            valet   = 1 if price >= 3 and random.random() < 0.55 else 0
+
+            # Opening hours by cuisine
+            if cuisine == "South Indian":
+                opening, closing = "07:00", "22:30"     # breakfast onwards
+            elif cuisine == "Continental":
+                opening, closing = "08:00", "23:00"     # all-day cafe
+            elif cuisine == "Italian":
+                opening, closing = "12:00", "23:00"
+            elif cuisine == "Mughlai":
+                opening, closing = "12:30", "23:30"     # lunch + dinner
+            else:
+                opening, closing = "12:00", "23:00"
 
             all_branch_rows.append((
-                code, name, hood, address, lat, lon,
+                code, name, hood, address, "Bangalore", lat, lon,
                 capacity, tables, cuisine,
-                rating, reviews, price,
+                rating, reviews, popularity, price,
                 veg, vegan, gf, halal, kosher,
-                park, outdoor, valet,
-                1, "11:00", "22:30", phone,
-                BRANCH_DESCRIPTIONS.get(cuisine, ""),
+                parking, outdoor, valet,
+                opening, closing, phone,
+                BRANCH_DESCRIPTIONS[cuisine],
             ))
 
     conn.executemany(
         """INSERT INTO branches
-           (branch_code, name, neighborhood, address, latitude, longitude,
-            capacity, tables, cuisine, rating, review_count, price_range,
-            dietary_vegetarian, dietary_vegan, dietary_gluten_free,
-            dietary_halal, dietary_kosher, parking, outdoor_seating, valet,
-            is_active, opening_time, closing_time, phone, description)
-           VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
+           (branch_code, name, neighborhood, address, city, latitude, longitude,
+            capacity, tables, cuisine, rating, review_count, popularity_score, price_range,
+            dietary_vegetarian, dietary_vegan, dietary_gluten_free, dietary_halal, dietary_kosher,
+            parking, outdoor_seating, valet, opening_time, closing_time, phone, description)
+           VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
         all_branch_rows,
     )
 
-    # Seed menus
+    # ── Seed menus per branch ──────────────────────────────────────────────────
     branch_rows = conn.execute("SELECT id, cuisine, price_range FROM branches").fetchall()
     for branch in branch_rows:
         template = MENUS.get(branch["cuisine"], [])
+        # Smaller price spread for Indian (price-sensitive market) vs continental
+        if branch["cuisine"] in ("North Indian", "South Indian", "Biryani",
+                                  "Indo-Chinese", "Mughlai", "Coastal"):
+            price_factor = {1: 0.85, 2: 1.0, 3: 1.10, 4: 1.20}.get(branch["price_range"], 1.0)
+        else:
+            price_factor = {1: 0.85, 2: 1.0, 3: 1.15, 4: 1.30}.get(branch["price_range"], 1.0)
         for item in template:
-            name, desc, cat, base_price, veg, vegan, gf, halal, popular, cal = item
-            # Adjust price slightly by branch price_range tier
-            price_factor = {1: 0.8, 2: 1.0, 3: 1.2, 4: 1.5}.get(branch["price_range"], 1.0)
-            price = round(base_price * price_factor, 2)
+            name, desc, cat, base_price, veg, vegan, gf, jain, popular, cal, raw_tags = item
+            price = round(base_price * price_factor, 0)
+            tags = _build_dish_tags(name, branch["cuisine"], raw_tags, bool(veg), bool(vegan), bool(gf))
             all_menu_rows.append((
                 branch["id"], name, desc, cat, price,
-                1, int(veg), int(vegan), int(gf), int(halal), int(popular), cal,
+                int(veg), int(vegan), int(gf), 1, int(jain), int(popular), cal, tags,
             ))
 
     conn.executemany(
         """INSERT INTO menu_items
-           (branch_id, name, description, category, price,
-            is_available, is_vegetarian, is_vegan, is_gluten_free,
-            is_halal, is_popular, calories)
-           VALUES (?,?,?,?,?,?,?,?,?,?,?,?)""",
+           (branch_id, name, description, category, price, is_available,
+            is_vegetarian, is_vegan, is_gluten_free, is_halal, is_jain, is_popular, calories, dish_tags)
+           VALUES (?,?,?,?,?,1,?,?,?,?,?,?,?,?)""",
         all_menu_rows,
     )
+
     return len(all_branch_rows), len(all_menu_rows)
 
 
-COMPANIES = [
-    ("Apex Consulting",     "Alice Brown",  "alice@apex.com",       "CORP001", 15.0, 50000),
-    ("NovaTech Solutions",  "Bob Chen",     "bob@novatech.io",      "CORP002", 10.0, 30000),
-    ("Meridian Law LLP",    "Carol Davis",  "carol@meridianlaw.com","CORP003", 12.0, 40000),
-    ("BlueWave Capital",    "David Evans",  "david@bluewave.com",   "CORP004", 20.0, 75000),
-    ("Orion Media Group",   "Emma Foster",  "emma@orionmedia.com",  "CORP005",  8.0, 20000),
-    ("Vertex Analytics",    "Frank Gupta",  "frank@vertex.ai",      "CORP006", 10.0, 25000),
-    ("Pinnacle Pharma",     "Grace Huang",  "grace@pinnaclerx.com", "CORP007", 18.0, 60000),
-    ("Sterling Architects", "Harry Ito",    "harry@sterling.arch",  "CORP008", 12.0, 35000),
-    ("Summit Engineering",  "Iris Johnson", "iris@summit.eng",      "CORP009", 10.0, 30000),
-    ("Catalyst Ventures",   "Jack Kim",     "jack@catalystvc.com",  "CORP010", 25.0, 100000),
-]
+def seed_corporate_accounts(conn):
+    """Seed 10 realistic Bangalore-based corporate accounts."""
+    conn.execute("DELETE FROM corporate_accounts")
+    accounts = [
+        ("Infosys Limited",         "Rohit Menon",     "rohit.menon@infosys.com",        "CORP-INFY",  10.0, "Whitefield,Marathahalli",      500000),
+        ("Wipro Technologies",      "Anita Desai",     "anita.desai@wipro.com",          "CORP-WIPRO", 12.0, "Sarjapur Road,Bellandur",      400000),
+        ("Razorpay",                "Karthik Iyer",    "karthik.iyer@razorpay.com",      "CORP-RZP",   8.0,  "Koramangala,HSR Layout",       250000),
+        ("Flipkart",                "Sneha Reddy",     "sneha.reddy@flipkart.com",       "CORP-FK",    10.0, "Bellandur,Sarjapur Road",      450000),
+        ("Goldman Sachs Bangalore", "Vikram Chopra",   "vikram.chopra@gs.com",           "CORP-GS",    15.0, "UB City,Lavelle Road",         600000),
+        ("Swiggy",                  "Aarav Iyer",      "aarav.iyer@swiggy.in",           "CORP-SWG",   8.0,  "Koramangala,Indiranagar",      300000),
+        ("PhonePe",                 "Megha Nair",      "megha.nair@phonepe.com",         "CORP-PPE",   8.0,  "Bellandur,Sarjapur Road",      280000),
+        ("Cisco Systems",           "Daniel Pereira",  "daniel.pereira@cisco.com",       "CORP-CSCO",  12.0, "Sarjapur Road,Whitefield",     500000),
+        ("EY Bangalore",            "Tanvi Bhatia",    "tanvi.bhatia@ey.com",            "CORP-EY",    10.0, "UB City,MG Road",              400000),
+        ("Microsoft India",         "Arjun Kapoor",    "arjun.kapoor@microsoft.com",     "CORP-MSFT",  15.0, "Hebbal,Whitefield",            700000),
+    ]
+    conn.executemany(
+        """INSERT INTO corporate_accounts
+           (company_name, contact_name, contact_email, account_code,
+            discount_percentage, preferred_branches, credit_limit)
+           VALUES (?,?,?,?,?,?,?)""",
+        accounts,
+    )
+    return len(accounts)
 
 
 def main():
-    print("Initialising schema…")
+    print("Initialising GoodFoods database (Bangalore multi-cuisine chain)…")
     init_db()
     conn = get_db()
     try:
         nb, nm = seed_branches_and_menus(conn)
-        conn.execute("DELETE FROM corporate_accounts")
-        conn.executemany(
-            """INSERT INTO corporate_accounts
-               (company_name,contact_name,contact_email,account_code,
-                discount_percentage,preferred_branches,credit_limit)
-               VALUES (?,?,?,?,?,?,?)""",
-            [(n,c,e,code,d,json.dumps([]),cr) for n,c,e,code,d,cr in COMPANIES],
-        )
+        ncorp  = seed_corporate_accounts(conn)
         conn.commit()
+        print(f"  ✅ {nb} branches across {len(CUISINES)} cuisines")
+        print(f"  ✅ Indian-majority distribution: "
+              + ", ".join(f"{c}×{n}" for c, n in BRANCHES_BY_CUISINE.items()))
+        print(f"  ✅ {nm} menu items (every dish tagged for dish-level search)")
+        print(f"  ✅ {ncorp} corporate accounts")
+        print("\nReady to launch:  streamlit run app.py")
     finally:
         conn.close()
-    print(f"Seeded {nb} GoodFoods locations with {nm} menu items.")
-    print(f"Seeded {len(COMPANIES)} corporate accounts.")
 
 
 if __name__ == "__main__":

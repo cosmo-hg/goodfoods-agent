@@ -1,3 +1,5 @@
+from __future__ import annotations
+
 """
 Agentic loop — all intent determination is delegated entirely to the LLM.
 
@@ -19,9 +21,17 @@ import datetime as _dt
 
 from openai import OpenAI, RateLimitError
 
-from config import GROQ_API_KEYS, GROQ_BASE_URL, MODEL, TEMPERATURE, log_agent_trace
+from config import GROQ_API_KEYS, GROQ_BASE_URL, MODEL, TEMPERATURE, log_agent_trace, log_agent_turn
 from agent.prompts import SYSTEM_PROMPT
 from agent.history import compress_history, _COMPRESS_TRIGGER
+from agent.slots import (
+    BookingSlots,
+    update_from_tool_call,
+    update_from_tool_result,
+    intent_for_tool,
+    DEFAULT_TURN_INTENT,
+)
+from tools.date_resolver import format_for_llm as format_date_ref
 from mcp.registry import get_mcp_client
 
 _IN_TURN_COMPRESS_THRESHOLD = 16
@@ -112,12 +122,17 @@ def _call_api(messages: list, tools: list, temperature: float):
                 f"They will recover in up to {_KEY_COOLDOWN}s — please try again shortly."
             )
         try:
+            # max_tokens cap matters on Groq's free tier — without it the
+            # server reserves a huge output budget against the TPM limit,
+            # blowing through the 6 000 tokens/min allowance after one turn.
+            # 768 is comfortably more than any real agent reply needs.
             return _get_client(api_key).chat.completions.create(
                 model=model_name(),
                 messages=messages,
                 tools=tools,
                 tool_choice="auto",
                 temperature=temperature,
+                max_tokens=768,
             )
         except RateLimitError:
             _key_pool.mark_limited(key_index)
@@ -142,6 +157,7 @@ def run_agent(
     session_id=None,
     user_context=None,
     existing_refs=None,
+    slots: BookingSlots | None = None,
 ):
     """
     Run the agentic loop.
@@ -153,12 +169,20 @@ def run_agent(
     API key rotation is handled transparently inside _call_api — a key switch
     mid-turn does not affect the history list passed in or returned.
 
-    Returns (response_text, updated_history, side_effects)
+    Slot tracking: pass the caller's BookingSlots instance — this function
+    mutates it in place as tool calls and results flow through. The caller
+    sees the updated state immediately. Pass None to opt out (legacy callers).
+
+    Returns (response_text, updated_history, side_effects, turn_meta)
     side_effects keys:
       branch_results     — list from the last search_branches call (for UI)
       reservation        — dict from make_reservation if a booking was made
       user_profile       — dict from get_user_profile if a profile was found
       experience_package — dict from create_experience_package if created
+
+    turn_meta keys:
+      intent             — classified intent label for this turn (see slots.py)
+      slot_delta         — {field: new_value} populated this turn
     """
     mcp = get_mcp_client()
 
@@ -166,12 +190,15 @@ def run_agent(
     turn_id = f"{session_id or 'anon'}_{_dt.datetime.now().strftime('%Y%m%d_%H%M%S_%f')}"
     _step   = 0   # increments with every logged event in this turn
 
-    today  = _dt.date.today()
-    system = (
-        SYSTEM_PROMPT
-        + f"\n\nToday is {today.strftime('%A, %B %d, %Y')} (ISO: {today}). "
-        "Always use ISO YYYY-MM-DD format when calling tools that accept a date."
-    )
+    # Slot + intent tracking for this turn
+    if slots is None:
+        slots = BookingSlots()           # ephemeral; caller didn't pass one
+    turn_intent: str | None = None       # first primary tool call wins
+    slot_delta: dict = {}                # aggregated across all tool calls/results this turn
+
+    # Inject a deterministic date reference. The LLM no longer has to compute
+    # "this Saturday" from today's date — it looks the phrase up in a table.
+    system = SYSTEM_PROMPT + "\n\n" + format_date_ref()
 
     if existing_refs:
         refs_str = ", ".join(existing_refs)
@@ -212,7 +239,14 @@ def run_agent(
                             result=content[:500] if content else None)
             if len(history) > _COMPRESS_TRIGGER:
                 history = compress_history(history)
-            return content, history, side_effects
+            # Finalise intent + log the turn
+            final_intent = turn_intent or DEFAULT_TURN_INTENT
+            log_agent_turn(session_id, turn_id, final_intent, slot_delta, slots.to_dict())
+            return content, history, side_effects, {
+                "intent": final_intent,
+                "slot_delta": slot_delta,
+                "turn_id": turn_id,
+            }
 
         # ── LLM requested one or more tool calls ──────────────────────────────
         if choice.finish_reason in ("tool_calls", "function_call"):
@@ -259,17 +293,30 @@ def run_agent(
                                     result=err_content)
                     continue
 
+                # ── Slot + intent update from the tool CALL ────────────────────
+                # Slot updates happen BEFORE execution so even a failing tool
+                # call leaves a record of what the LLM tried to do.
+                name = tc.function.name
+                call_delta = update_from_tool_call(slots, name, args)
+                slot_delta.update(call_delta)
+
+                # First PRIMARY tool call wins the turn's intent classification.
+                if turn_intent is None:
+                    candidate = intent_for_tool(name)
+                    if candidate:
+                        turn_intent = candidate
+
                 # Log the tool call before executing it
                 _step += 1
                 log_agent_trace(session_id, turn_id, _step, "tool_call",
-                                tool_name=tc.function.name, arguments=args)
+                                tool_name=name, arguments=args)
 
-                result_str = mcp.call_tool(tc.function.name, args)
+                result_str = mcp.call_tool(name, args)
 
                 # Log the tool result immediately after
                 _step += 1
                 log_agent_trace(session_id, turn_id, _step, "tool_result",
-                                tool_name=tc.function.name, result=result_str)
+                                tool_name=name, result=result_str)
 
                 history.append({
                     "role":         "tool",
@@ -279,14 +326,21 @@ def run_agent(
 
                 try:
                     result_data = json.loads(result_str)
-                    name        = tc.function.name
+
+                    # ── Slot update from the tool RESULT ────────────────────────
+                    # Examples: get_user_profile fills name/phone; make_reservation
+                    # populates active_reference + branch_name.
+                    result_delta = update_from_tool_result(slots, name, result_data)
+                    slot_delta.update(result_delta)
+
+                    # UI side-effects (unchanged)
                     if name == "search_branches" and isinstance(result_data, list):
                         side_effects["branch_results"] = result_data
-                    elif name == "make_reservation" and result_data.get("success"):
+                    elif name == "make_reservation" and isinstance(result_data, dict) and result_data.get("success"):
                         side_effects["reservation"] = result_data
-                    elif name == "get_user_profile" and result_data.get("found"):
+                    elif name == "get_user_profile" and isinstance(result_data, dict) and result_data.get("found"):
                         side_effects["user_profile"] = result_data
-                    elif name == "create_experience_package" and result_data.get("success"):
+                    elif name == "create_experience_package" and isinstance(result_data, dict) and result_data.get("success"):
                         side_effects["experience_package"] = result_data
                 except Exception:
                     pass
@@ -296,8 +350,16 @@ def run_agent(
         # ── Unexpected finish reason ──────────────────────────────────────────
         fallback = choice.message.content or "I encountered an issue. Please try again."
         history.append({"role": "assistant", "content": fallback})
-        return fallback, history, side_effects
+        final_intent = turn_intent or DEFAULT_TURN_INTENT
+        log_agent_turn(session_id, turn_id, final_intent, slot_delta, slots.to_dict())
+        return fallback, history, side_effects, {
+            "intent": final_intent, "slot_delta": slot_delta, "turn_id": turn_id,
+        }
 
     msg = "I reached the maximum processing steps. Please try again."
     history.append({"role": "assistant", "content": msg})
-    return msg, history, side_effects
+    final_intent = turn_intent or DEFAULT_TURN_INTENT
+    log_agent_turn(session_id, turn_id, final_intent, slot_delta, slots.to_dict())
+    return msg, history, side_effects, {
+        "intent": final_intent, "slot_delta": slot_delta, "turn_id": turn_id,
+    }

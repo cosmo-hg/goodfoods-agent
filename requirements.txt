@@ -3,3 +3,6 @@ openai>=1.12.0
 python-dotenv>=1.0.0
 pytest>=8.0.0
 pandas>=2.0.0
+# Browser geolocation bridge — free, MIT, no API keys.
+# Adds a "Use my location" button in the sidebar; results flow into st.session_state.
+streamlit-geolocation>=0.0.10

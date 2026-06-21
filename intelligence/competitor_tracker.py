@@ -1,34 +1,32 @@
 import re
 from config import get_db
 
+# Bangalore continental-dining competitors that guests typically reference.
+# This list is used (a) for ambient passive scanning of guest messages, and
+# (b) by the log_competitor_mention tool when the LLM explicitly flags one.
 COMPETITORS = [
-    "olive garden",
-    "applebee's",
-    "applebees",
-    "chili's",
-    "chilis",
-    "tgi fridays",
-    "tgi friday",
-    "outback steakhouse",
-    "outback",
-    "red lobster",
-    "denny's",
-    "dennys",
-    "ihop",
-    "cheesecake factory",
-    "buffalo wild wings",
-    "bdubs",
-    "panera bread",
-    "panera",
-    "shake shack",
-    "five guys",
-    "chipotle",
-    "sweetgreen",
-    "nandos",
-    "nando's",
-    "wagamama",
-    "pizza express",
-    "harvester",
+    # Italian
+    "toscano", "fenny's", "fennys", "little italy", "pizza express",
+    "california pizza kitchen", "cpk", "pizza hut", "domino's", "dominos",
+    # Continental / European cafes
+    "smoke house deli", "smoke house", "shd",
+    "cafe noir", "the leela cafe", "olive beach", "olive bistro", "olive",
+    "sly granny", "toast & tonic", "toast and tonic",
+    "ttk", "the fatty bao", "monkey bar", "monkey",
+    # American / Burgers / BBQ
+    "hard rock cafe", "hard rock", "tgif", "tgi fridays", "tgi friday",
+    "the smoke co", "smoke co", "burgs by burgundy", "burgundy",
+    "plan b", "smally's resto cafe",
+    "shake shack", "five guys",
+    # Steakhouse
+    "the grand smoke", "outback steakhouse", "outback",
+    # Mexican
+    "sancho's", "sanchos", "mamagoto",
+    # Mediterranean / Lebanese
+    "byg brewski", "big brewsky", "byg ventures",
+    "the levantine", "open box",
+    # Generic / aggregators
+    "zomato", "swiggy dineout", "dineout", "eazydiner",
 ]
 
 

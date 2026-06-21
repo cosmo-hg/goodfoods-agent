@@ -8,9 +8,15 @@ import tempfile
 import os
 
 from config import init_db
-from tools.search_branches import search_branches, score_branch, haversine
+from tools.search_branches import search_branches, haversine
 from tools.check_availability import check_availability, get_all_slots, time_to_minutes
 from tools.make_reservation import make_reservation
+from tools.is_served_area import is_served_area
+from tools.location_resolver import resolve_user_location, nearest_neighborhood
+# Test-only helper: skip the network call inside resolve_user_location
+def resolve_user_location_offline(lat, lon):
+    return resolve_user_location(lat, lon, with_geocode=False)
+
 
 
 # ---------------------------------------------------------------------------
@@ -60,125 +66,227 @@ def branch_id(db_with_branch):
 
 
 # ---------------------------------------------------------------------------
-# search_branches scoring tests
+# search_branches behaviour tests (filters as filters)
 # ---------------------------------------------------------------------------
 
-class TestSearchBranchesScoring:
-    def _make_branch(self, **kwargs):
-        base = dict(
-            id=1, name="Test", neighborhood="Downtown", cuisine="Italian",
-            capacity=50, rating=4.0, latitude=40.71, longitude=-74.00,
-            price_range=2, dietary_vegetarian=0, dietary_vegan=0,
-            dietary_gluten_free=0, dietary_halal=0, dietary_kosher=0,
-            parking=0, outdoor_seating=0,
-        )
-        base.update(kwargs)
-        return base
+class TestSearchBranchesBehaviour:
+    """
+    Confirms the bug that prompted the rewrite is fixed: cuisine and location
+    are SQL filters, not fuzzy score bonuses. An unmatched query returns [].
+    """
 
-    def test_cuisine_match_scores_40(self):
-        branch = self._make_branch(cuisine="Italian")
-        s = score_branch(branch, {"cuisine": "Italian"})
-        assert s >= 40
-
-    def test_cuisine_mismatch_no_cuisine_points(self):
-        branch = self._make_branch(cuisine="Italian")
-        s_match = score_branch(branch, {"cuisine": "Italian"})
-        s_miss = score_branch(branch, {"cuisine": "Mexican"})
-        assert s_match - s_miss == 40
-
-    def test_cuisine_case_insensitive(self):
-        branch = self._make_branch(cuisine="Italian")
-        s = score_branch(branch, {"cuisine": "italian"})
-        assert s >= 40
-
-    def test_capacity_fit_scores_20(self):
-        branch = self._make_branch(capacity=10)
-        s_fit = score_branch(branch, {"party_size": 10})
-        s_over = score_branch(branch, {"party_size": 11})
-        assert s_fit - s_over == 20
-
-    def test_rating_normalised_to_10_pts(self):
-        # 4.8 → 10 pts; 3.8 → 0 pts
-        branch_high = self._make_branch(rating=4.8, cuisine=None)
-        branch_low = self._make_branch(rating=3.8, cuisine=None)
-        diff = score_branch(branch_high, {}) - score_branch(branch_low, {})
-        assert abs(diff - 10) < 0.01
-
-    def test_location_hint_match_scores_25(self):
-        branch = self._make_branch(neighborhood="Downtown")
-        s_match = score_branch(branch, {"location_hint": "Downtown"})
-        s_miss = score_branch(branch, {"location_hint": "Uptown"})
-        assert s_match - s_miss == 25
-
-    def test_dietary_vegetarian_scores_15(self):
-        branch = self._make_branch(dietary_vegetarian=1)
-        s_match = score_branch(branch, {"dietary_vegetarian": True})
-        s_no = score_branch(branch, {})
-        assert s_match - s_no == 15
-
-    def test_dietary_vegan_scores_15(self):
-        branch = self._make_branch(dietary_vegan=1)
-        s = score_branch(branch, {"dietary_vegan": True})
-        s0 = score_branch(branch, {})
-        assert s - s0 == 15
-
-    def test_dietary_flag_not_set_no_points(self):
-        branch = self._make_branch(dietary_halal=0)
-        s = score_branch(branch, {"dietary_halal": True})
-        s0 = score_branch(branch, {})
-        assert s == s0
-
-    def test_price_range_match_scores_10(self):
-        branch = self._make_branch(price_range=3)
-        s_match = score_branch(branch, {"price_range": 3})
-        s_miss = score_branch(branch, {"price_range": 1})
-        assert s_match - s_miss == 10
-
-    def test_proximity_scores_up_to_20(self):
-        # Same coordinates → max proximity (20 pts)
-        branch = self._make_branch(latitude=40.71, longitude=-74.00)
-        s = score_branch(branch, {"latitude": 40.71, "longitude": -74.00})
-        # Without lat/lon → 0 pts for proximity
-        s0 = score_branch(branch, {})
-        assert s - s0 == pytest.approx(20.0, abs=0.1)
-
-    def test_haversine_zero_distance(self):
-        assert haversine(40.71, -74.00, 40.71, -74.00) == pytest.approx(0.0, abs=1e-6)
-
-    def test_haversine_known_distance(self):
-        # NYC to London ≈ 5570 km
-        dist = haversine(40.7128, -74.0060, 51.5074, -0.1278)
-        assert 5500 < dist < 5650
-
-    def test_returns_top_3(self, db_with_branch):
+    def _seed_branches(self, db_path):
+        """Seed two Italian and one American branch across known areas."""
         from config import get_db
-        conn = get_db(db_with_branch)
-        # Add two more branches
+        conn = get_db(db_path)
         conn.executemany(
-            """
-            INSERT INTO branches
-                (name, neighborhood, cuisine, capacity, rating, latitude, longitude,
-                 price_range, dietary_vegetarian, dietary_vegan, dietary_gluten_free,
-                 dietary_halal, dietary_kosher, parking, outdoor_seating)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-            """,
+            """INSERT INTO branches
+               (name, neighborhood, cuisine, capacity, rating, latitude, longitude,
+                price_range, popularity_score,
+                dietary_vegetarian, dietary_vegan, dietary_gluten_free,
+                dietary_halal, dietary_kosher, parking, outdoor_seating)
+               VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
             [
-                ("Midtown Grill", "Midtown", "American", 40, 4.0, 40.75, -73.99, 2, 0,0,0,0,0,0,0),
-                ("Sakura Ramen Bar Uptown", "Uptown", "Japanese", 30, 4.2, 40.78, -73.97, 2, 0,0,0,0,0,0,0),
-                ("Lotus Garden East", "East Side", "Thai", 60, 4.6, 40.72, -73.96, 1, 1,1,0,0,0,0,0),
+                ("GoodFoods Indiranagar — Italian", "Indiranagar", "Italian", 80, 4.6,
+                 12.9716, 77.6412, 3, 88.0, 1, 1, 0, 0, 0, 1, 0),
+                ("GoodFoods Koramangala — Italian", "Koramangala", "Italian", 70, 4.3,
+                 12.9352, 77.6245, 2, 65.0, 1, 0, 0, 0, 0, 1, 0),
+                ("GoodFoods MG Road — American",    "MG Road",     "American", 90, 4.4,
+                 12.9759, 77.6094, 3, 78.0, 1, 0, 0, 0, 0, 1, 0),
             ],
         )
+        # Seed a pizza on the Indiranagar Italian branch so dish search has data.
+        ids = conn.execute("SELECT id, cuisine FROM branches ORDER BY id").fetchall()
+        for row in ids:
+            if row["cuisine"] == "Italian":
+                conn.execute(
+                    """INSERT INTO menu_items
+                       (branch_id, name, description, category, price, is_available,
+                        is_vegetarian, is_vegan, is_gluten_free, is_halal, is_popular,
+                        calories, dish_tags)
+                       VALUES (?, 'Margherita Pizza', 'classic', 'Mains', 450, 1, 1, 0, 0, 1, 1, 720, 'pizza,italian,margherita,vegetarian')""",
+                    (row["id"],),
+                )
+            elif row["cuisine"] == "American":
+                conn.execute(
+                    """INSERT INTO menu_items
+                       (branch_id, name, description, category, price, is_available,
+                        is_vegetarian, is_vegan, is_gluten_free, is_halal, is_popular,
+                        calories, dish_tags)
+                       VALUES (?, 'Classic Cheeseburger', 'beef', 'Mains', 520, 1, 0, 0, 0, 0, 1, 920, 'burger,american,beef,cheeseburger')""",
+                    (row["id"],),
+                )
         conn.commit()
         conn.close()
 
-        results = search_branches({"cuisine": "Italian"}, db_with_branch)
-        assert len(results) <= 3
+    def test_cuisine_is_a_hard_filter(self, db_path):
+        """Asking for Italian must not return American — even if it scores high."""
+        self._seed_branches(db_path)
+        results = search_branches({"cuisine": "Italian", "party_size": 2}, db_path)
         assert len(results) >= 1
+        assert all(r["cuisine"] == "Italian" for r in results)
 
-    def test_results_sorted_by_score(self, db_with_branch):
-        results = search_branches({"cuisine": "Italian", "party_size": 2}, db_with_branch)
-        scores = [r["match_score"] for r in results]
-        assert scores == sorted(scores, reverse=True)
+    def test_location_outside_served_area_returns_empty(self, db_path):
+        """The Brooklyn failure mode: a location not in our DB must return [].
+
+        (is_served_area should have caught this earlier, but the search tool
+        is the last line of defence.)"""
+        self._seed_branches(db_path)
+        results = search_branches({"cuisine": "Italian", "location_hint": "Brooklyn"}, db_path)
+        assert results == []
+
+    def test_dish_search_filters_to_branches_with_dish(self, db_path):
+        """Searching for 'pizza' must only return branches whose menu has pizza."""
+        self._seed_branches(db_path)
+        results = search_branches({"dish": "pizza"}, db_path)
+        assert len(results) >= 1
+        for r in results:
+            assert r["cuisine"] == "Italian"   # only Italians have pizza in fixture
+
+    def test_dish_with_cuisine_match_yields_high_confidence(self, db_path):
+        self._seed_branches(db_path)
+        results = search_branches(
+            {"cuisine": "Italian", "dish": "pizza", "location_hint": "Indiranagar"},
+            db_path,
+        )
+        assert len(results) == 1
+        assert results[0]["confidence"] == "high"
+
+    def test_cuisine_synonym_resolves(self, db_path):
+        """A dish-name synonym should resolve to its cuisine — 'pizza' → Italian."""
+        self._seed_branches(db_path)
+        results = search_branches({"cuisine": "pizza"}, db_path)
+        assert len(results) >= 1
+        assert all(r["cuisine"] == "Italian" for r in results)
+
+    def test_popularity_drives_ranking_without_location(self, db_path):
+        """Two Italian branches, top should be the one with higher popularity_score."""
+        self._seed_branches(db_path)
+        results = search_branches({"cuisine": "Italian"}, db_path)
+        assert results[0]["popularity_score"] >= results[-1]["popularity_score"]
+
+    def test_capacity_filter_drops_undersized(self, db_path):
+        """A party of 100 won't fit any of our seeded branches → []."""
+        self._seed_branches(db_path)
+        results = search_branches({"cuisine": "Italian", "party_size": 200}, db_path)
+        assert results == []
+
+    def test_haversine_zero_distance(self):
+        assert haversine(12.97, 77.59, 12.97, 77.59) == pytest.approx(0.0, abs=1e-6)
+
+    def test_haversine_known_distance(self):
+        # Bangalore (Indiranagar) to Mumbai ≈ 840 km
+        dist = haversine(12.9716, 77.6412, 19.0760, 72.8777)
+        assert 800 < dist < 900
+
+
+# ---------------------------------------------------------------------------
+# is_served_area tests
+# ---------------------------------------------------------------------------
+
+class TestIsServedArea:
+    """The pre-search sanity check that stops the 'best pizza in Brooklyn' bug."""
+
+    def test_canonical_neighbourhood_served(self):
+        result = is_served_area("Indiranagar")
+        assert result["served"] is True
+        assert result["matched_neighborhood"] == "Indiranagar"
+
+    def test_case_insensitive_match(self):
+        result = is_served_area("KORAMANGALA")
+        assert result["served"] is True
+        assert result["matched_neighborhood"] == "Koramangala"
+
+    def test_alias_resolves_to_canonical(self):
+        result = is_served_area("Koramangala 5th Block")
+        assert result["served"] is True
+        assert result["matched_neighborhood"] == "Koramangala"
+
+    def test_off_city_not_served(self):
+        result = is_served_area("Brooklyn")
+        assert result["served"] is False
+        assert "Bangalore" in result["reason"]
+
+    def test_other_indian_city_not_served(self):
+        result = is_served_area("Pune")
+        assert result["served"] is False
+
+    def test_bangalore_unknown_neighbourhood_not_served(self):
+        """City matches but neighbourhood doesn't — flagged honestly."""
+        result = is_served_area("Electronic City Bangalore")
+        # 'bangalore' appears → falls into the city-known-but-area-unknown branch
+        assert result["served"] is False
+        assert result["alternative_suggestion"] is not None
+
+    def test_empty_location_treated_as_no_filter(self):
+        result = is_served_area("")
+        assert result["served"] is True
+        assert result["matched_neighborhood"] is None
+
+
+# ---------------------------------------------------------------------------
+# location_resolver — turning raw GPS into a structured location decision
+# ---------------------------------------------------------------------------
+
+class TestLocationResolver:
+    """
+    Covers the four real-world cases:
+      1. GPS inside Bangalore (Indiranagar)
+      2. GPS on the city edge (Whitefield)
+      3. GPS just outside the threshold (Electronic City area)
+      4. GPS clearly outside the city (Pune, Mumbai)
+    """
+
+    def test_inside_bangalore_indiranagar(self):
+        # 100ft Road, Indiranagar
+        r = resolve_user_location_offline(12.9716, 77.6412)
+        assert r["in_bangalore"] is True
+        assert r["nearest_neighborhood"] == "Indiranagar"
+        assert r["nearest_neighborhood_km"] < 1.0
+        assert r["city_centre_distance_km"] < 10
+
+    def test_inside_bangalore_whitefield(self):
+        # Whitefield — far east but still in the chain's service area
+        r = resolve_user_location_offline(12.9698, 77.7500)
+        assert r["in_bangalore"] is True
+        assert r["nearest_neighborhood"] == "Whitefield"
+
+    def test_inside_bangalore_koramangala(self):
+        r = resolve_user_location_offline(12.9352, 77.6245)
+        assert r["in_bangalore"] is True
+        assert r["nearest_neighborhood"] == "Koramangala"
+
+    def test_pune_is_outside(self):
+        # Pune — roughly 850 km from Bangalore
+        r = resolve_user_location_offline(18.5204, 73.8567)
+        assert r["in_bangalore"] is False
+        assert r["city_centre_distance_km"] > 100
+
+    def test_mumbai_is_outside(self):
+        r = resolve_user_location_offline(19.0760, 72.8777)
+        assert r["in_bangalore"] is False
+        assert r["city_centre_distance_km"] > 100
+
+    def test_delhi_is_outside(self):
+        r = resolve_user_location_offline(28.6139, 77.2090)
+        assert r["in_bangalore"] is False
+
+    def test_just_within_threshold(self):
+        # ~25 km north of MG Road — still treated as in-city
+        r = resolve_user_location_offline(13.20, 77.6094)
+        assert r["in_bangalore"] is True
+
+    def test_just_outside_threshold(self):
+        # ~50 km north — outside
+        r = resolve_user_location_offline(13.45, 77.6094)
+        assert r["in_bangalore"] is False
+
+    def test_nearest_neighborhood_is_one_of_25(self):
+        from config import NEIGHBORHOOD_COORDS
+        # Any point inside the city should match one of the 25 served areas
+        name, dist = nearest_neighborhood(12.9716, 77.6094)  # MG Road
+        assert name in NEIGHBORHOOD_COORDS
+        assert dist >= 0
 
 
 # ---------------------------------------------------------------------------
@@ -305,7 +413,7 @@ class TestMakeReservation:
             branch_id=branch_id,
             user_name="Jane Doe",
             user_email="jane@example.com",
-            user_phone="555-0001",
+            user_phone="9876543210",
             party_size=4,
             date="2026-12-10",
             time="19:00",
@@ -321,7 +429,7 @@ class TestMakeReservation:
             branch_id=branch_id,
             user_name="John Smith",
             user_email="john@example.com",
-            user_phone="555-0002",
+            user_phone="9876543211",
             party_size=2,
             date="2026-12-11",
             time="20:00",
@@ -335,7 +443,7 @@ class TestMakeReservation:
             branch_id=branch_id,
             user_name="A Guest",
             user_email="a@example.com",
-            user_phone="555-1000",
+            user_phone="9876543217",
             party_size=50,
             date="2026-12-15",
             time="13:00",
@@ -348,7 +456,7 @@ class TestMakeReservation:
             branch_id=branch_id,
             user_name="B Guest",
             user_email="b@example.com",
-            user_phone="555-2000",
+            user_phone="9876543218",
             party_size=1,
             date="2026-12-15",
             time="13:00",
@@ -363,7 +471,7 @@ class TestMakeReservation:
             branch_id=branch_id,
             user_name="A Guest",
             user_email="a2@example.com",
-            user_phone="555-3000",
+            user_phone="9876543219",
             party_size=50,
             date="2026-12-16",
             time="13:00",
@@ -376,7 +484,7 @@ class TestMakeReservation:
             branch_id=branch_id,
             user_name="B Guest",
             user_email="b2@example.com",
-            user_phone="555-4000",
+            user_phone="9876543220",
             party_size=50,
             date="2026-12-16",
             time="14:30",
@@ -390,7 +498,7 @@ class TestMakeReservation:
             branch_id=branch_id,
             user_name="Birthday Person",
             user_email="bday@example.com",
-            user_phone="555-5000",
+            user_phone="9876543221",
             party_size=6,
             date="2026-12-20",
             time="19:30",
@@ -414,7 +522,7 @@ class TestMakeReservation:
             branch_id=branch_id,
             user_name="Night Owl",
             user_email="owl@example.com",
-            user_phone="555-6000",
+            user_phone="9876543222",
             party_size=2,
             date="2026-12-22",
             time="23:30",  # outside operating hours
@@ -428,7 +536,7 @@ class TestMakeReservation:
             branch_id=branch_id,
             user_name="Loyal Guest",
             user_email="loyal@example.com",
-            user_phone="555-7000",
+            user_phone="9876543223",
             party_size=2,
             date="2026-12-25",
             time="12:00",
@@ -455,7 +563,7 @@ class TestMakeReservationValidation:
             branch_id=branch_id,
             user_name="Time Traveller",
             user_email="back@future.com",
-            user_phone="555-0000",
+            user_phone="9876543216",
             party_size=2,
             date="2020-01-01",
             time="19:00",
@@ -469,7 +577,7 @@ class TestMakeReservationValidation:
             branch_id=branch_id,
             user_name="Ghost",
             user_email="ghost@example.com",
-            user_phone="555-0001",
+            user_phone="9876543210",
             party_size=0,
             date="2030-06-01",
             time="19:00",
@@ -483,7 +591,7 @@ class TestMakeReservationValidation:
             branch_id=branch_id,
             user_name="Negative Nancy",
             user_email="neg@example.com",
-            user_phone="555-0002",
+            user_phone="9876543211",
             party_size=-3,
             date="2030-06-01",
             time="19:00",
@@ -497,7 +605,7 @@ class TestMakeReservationValidation:
             branch_id=branch_id,
             user_name="Mass Event",
             user_email="mass@example.com",
-            user_phone="555-0003",
+            user_phone="9876543212",
             party_size=501,
             date="2030-06-01",
             time="19:00",
@@ -511,7 +619,7 @@ class TestMakeReservationValidation:
             branch_id=branch_id,
             user_name="Bad Email",
             user_email="not-an-email",
-            user_phone="555-0004",
+            user_phone="9876543213",
             party_size=2,
             date="2030-06-01",
             time="19:00",
@@ -525,7 +633,7 @@ class TestMakeReservationValidation:
             branch_id=branch_id,
             user_name="Oops",
             user_email="oops@example.com",
-            user_phone="555-0005",
+            user_phone="9876543214",
             party_size=2,
             date="15/06/2030",
             time="19:00",
@@ -555,7 +663,7 @@ class TestMakeReservationValidation:
             branch_id=inactive_id,
             user_name="Hopeful Guest",
             user_email="hopeful.guest@realemail.com",
-            user_phone="555-0006",
+            user_phone="9876543215",
             party_size=2,
             date="2030-06-01",
             time="19:00",
@@ -629,7 +737,7 @@ class TestModifyReservationValidation:
             branch_id=branch_id,
             user_name="Test Guest",
             user_email="test@example.com",
-            user_phone="555-9999",
+            user_phone="9876543224",
             party_size=4,
             date="2030-08-01",
             time="19:00",
