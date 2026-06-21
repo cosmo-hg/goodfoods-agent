@@ -354,6 +354,14 @@ def init_db(db_path=None):
     _safe_add_column(conn, "branches",        "city",             "TEXT DEFAULT 'Bangalore'")
     _safe_add_column(conn, "menu_items",      "dish_tags",        "TEXT")
     _safe_add_column(conn, "menu_items",      "is_jain",          "INTEGER DEFAULT 0")
+    _safe_add_column(conn, "branches",        "dietary_jain",     "INTEGER DEFAULT 0")
+    # Auto-derive branch-level jain flag from menu_items so search can hard-filter.
+    conn.execute("""
+        UPDATE branches SET dietary_jain = 1
+        WHERE id IN (
+            SELECT DISTINCT branch_id FROM menu_items WHERE is_jain = 1
+        ) AND dietary_jain = 0
+    """)
 
     # Session-persistence columns — survive a page refresh / browser restart.
     # The Streamlit app saves slot state + intent + message history here

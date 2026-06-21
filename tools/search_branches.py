@@ -167,9 +167,19 @@ def search_branches(params, db_path=None):
     user_lon       = params.get("longitude")
     price_filter   = params.get("price_range")
 
+    # Map every dietary param to its menu_items column.
+    # Used identically for all restrictions — no special-casing per diet.
+    _DIETARY_MAP = {
+        "dietary_jain":        "is_jain",
+        "dietary_vegan":       "is_vegan",
+        "dietary_vegetarian":  "is_vegetarian",
+        "dietary_gluten_free": "is_gluten_free",
+        "dietary_halal":       "is_halal",
+    }
+    # Columns for active restrictions (e.g. ["is_jain", "is_halal"])
+    active_diet_cols = [col for param, col in _DIETARY_MAP.items() if params.get(param)]
+
     # ── Build SQL WHERE clauses ────────────────────────────────────────────────
-    # Hard filters: cuisine, location, capacity.  Soft filters (dietary, price)
-    # are applied as ranking signals so we don't over-prune.
     where = ["b.is_active = 1", "b.capacity >= ?"]
     args: list = [party_size]
 
@@ -178,35 +188,46 @@ def search_branches(params, db_path=None):
         args.append(cuisine_filter)
 
     if location_hint:
-        # Exact neighbourhood match (case-insensitive). is_served_area should
-        # have run already to resolve aliases like "Koramangala 5th Block"
-        # to "Koramangala", but we accept either form here defensively.
         where.append("LOWER(b.neighborhood) = ?")
         args.append(location_hint.lower())
 
     sql = f"SELECT * FROM branches b WHERE {' AND '.join(where)}"
     rows = cursor.execute(sql, args).fetchall()
 
-    # ── Dish filter: requires a JOIN, applied as a second pass ─────────────────
-    # If a dish was specified, restrict to branches whose menu has a matching
-    # dish_tags entry. We score the match strength too so "pizza" → branches
-    # with actual pizzas rank above branches that merely tagged "italian".
-    dish_match_by_branch: dict = {}   # branch_id → [matching menu rows]
+    # ── Dietary hard filter ────────────────────────────────────────────────────
+    # For any active dietary restriction, exclude branches that have ZERO
+    # compliant dishes. This is the single rule that prevents recommending
+    # chicken to someone asking for Jain, or pork to someone asking for Halal.
+    # No diet is special-cased — they all go through the same path.
+    if active_diet_cols:
+        diet_check_sql = " AND ".join(f"{c} = 1" for c in active_diet_cols)
+        compliant_ids = {
+            r["branch_id"]
+            for r in cursor.execute(
+                f"SELECT DISTINCT branch_id FROM menu_items "
+                f"WHERE is_available = 1 AND {diet_check_sql}"
+            ).fetchall()
+        }
+        rows = [r for r in rows if r["id"] in compliant_ids]
+
+    # ── Dish filter: second pass ───────────────────────────────────────────────
+    dish_match_by_branch: dict = {}
     if dish_filter:
+        diet_clause = ("AND " + " AND ".join(f"mi.{c} = 1" for c in active_diet_cols)
+                       if active_diet_cols else "")
         dish_rows = cursor.execute(
-            """SELECT mi.branch_id, mi.id, mi.name, mi.price, mi.category,
-                      mi.is_popular, mi.is_vegetarian, mi.is_vegan,
-                      mi.dish_tags
+            f"""SELECT mi.branch_id, mi.id, mi.name, mi.price, mi.category,
+                      mi.is_popular, mi.is_vegetarian, mi.is_vegan, mi.is_jain,
+                      mi.is_halal, mi.is_gluten_free, mi.dish_tags
                FROM menu_items mi
                WHERE mi.is_available = 1
+                 {diet_clause}
                  AND (LOWER(mi.dish_tags) LIKE ?
                       OR LOWER(mi.name)   LIKE ?)""",
             (f"%{dish_filter}%", f"%{dish_filter}%"),
         ).fetchall()
         for r in dish_rows:
             dish_match_by_branch.setdefault(r["branch_id"], []).append(dict(r))
-
-        # Restrict to branches that actually have the dish on the menu.
         rows = [r for r in rows if r["id"] in dish_match_by_branch]
 
     if not rows:
@@ -256,17 +277,23 @@ def search_branches(params, db_path=None):
             else:
                 reasons.append(f"serves {dish_filter}")
 
-        # 5. Dietary alignment — soft, additive
-        diet_matches = 0
-        for flag in ("vegetarian", "vegan", "gluten_free", "halal", "kosher"):
-            if params.get(f"dietary_{flag}") and b.get(f"dietary_{flag}"):
-                score += 4.0
-                diet_matches += 1
-        if params.get("dietary_jain") and b.get("dietary_vegan"):
-            # Jain is approximated via the vegan flag (no onion/garlic is stricter,
-            # but vegan menus are the closest signal we have).
-            score += 3.0
-            diet_matches += 1
+        # 5. Dietary alignment — rank by how many compliant dishes exist.
+        # The hard filter already excluded branches with 0 compliant items,
+        # so every branch here has at least 1. More compliant items = higher score.
+        if active_diet_cols:
+            diet_check_sql = " AND ".join(f"{c} = 1" for c in active_diet_cols)
+            compliant_count = cursor.execute(
+                f"SELECT COUNT(*) FROM menu_items "
+                f"WHERE branch_id = ? AND is_available = 1 AND {diet_check_sql}",
+                (b["id"],),
+            ).fetchone()[0]
+            # 1 item → +4, 5 items → +12, 10+ items → +20 (capped)
+            score += min(20.0, 4.0 + (compliant_count - 1) * 1.6)
+            diet_label = "/".join(
+                p.replace("dietary_", "").replace("_", "-")
+                for p in _DIETARY_MAP if params.get(p)
+            )
+            reasons.append(f"{compliant_count} {diet_label}-compliant dishes")
 
         # 6. Price match
         if price_filter and b.get("price_range") and int(price_filter) == int(b["price_range"]):
@@ -289,19 +316,31 @@ def search_branches(params, db_path=None):
         b["match_score"]   = round(score, 1)
 
         # ── Menu highlights ────────────────────────────────────────────────────
-        # If a dish was searched, surface the matching dishes first.
+        # ALWAYS filter highlights by active dietary restrictions.
+        # A branch passes the hard filter above, but its most popular dishes
+        # may still be non-compliant. We must only surface safe ones.
+        diet_highlight_sql = (
+            "AND " + " AND ".join(f"{c} = 1" for c in active_diet_cols)
+            if active_diet_cols else ""
+        )
+
         if matched_dishes:
-            # Sort: popular first, then by category Mains > Starters > others.
-            cat_rank = {"Mains": 1, "Tapas": 1, "Starters": 2, "Breakfast": 2, "Sides": 3, "Desserts": 4, "Drinks": 5}
-            matched_dishes.sort(key=lambda d: (not d["is_popular"], cat_rank.get(d["category"], 9), d["name"]))
+            # dish_filter already restricted to compliant items in the query above,
+            # so matched_dishes are already safe. Just sort and take top 3.
+            cat_rank = {"Mains": 1, "Tapas": 1, "Starters": 2, "Breakfast": 2,
+                        "Sides": 3, "Desserts": 4, "Drinks": 5}
+            matched_dishes.sort(
+                key=lambda d: (not d["is_popular"], cat_rank.get(d["category"], 9), d["name"])
+            )
             b["menu_highlights"] = [
                 {"name": d["name"], "price": d["price"], "category": d["category"]}
                 for d in matched_dishes[:3]
             ]
         else:
             cursor.execute(
-                """SELECT name, price, category FROM menu_items
+                f"""SELECT name, price, category FROM menu_items
                    WHERE branch_id = ? AND is_available = 1
+                   {diet_highlight_sql}
                    ORDER BY is_popular DESC,
                             CASE category
                                 WHEN 'Mains'      THEN 1
