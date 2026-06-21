@@ -1145,27 +1145,36 @@ with tab_chat:
                         phone=st.session_state.guest_phone,
                     )
 
-            except RuntimeError as e:
-                # Friendly UX for "all API keys cooling down" — common on Groq free tier
-                # when traffic bursts. The conversation state is preserved; the guest
-                # can simply retry.
-                if "rate-limited" in str(e).lower():
-                    response = (
-                        "I'm getting a lot of requests right now and our free-tier "
-                        "API quota is briefly maxed out. Please retry in 30-60 seconds "
-                        "— your conversation is saved."
-                    )
-                else:
-                    response = f"Something went wrong — please try again. *(Error: {e})*"
-                side_effects = {"branch_results": [], "reservation": None,
-                                "user_profile": None, "experience_package": None}
-                turn_meta = {"intent": "ERROR_RATE_LIMIT" if "rate-limited" in str(e).lower() else "ERROR",
-                             "slot_delta": {}, "turn_id": None}
             except Exception as e:
-                response = f"Something went wrong — please try again. *(Error: {e})*"
+                err_str = str(e).lower()
+                if "rate-limited" in err_str or "rate_limit" in err_str or "429" in err_str:
+                    response = (
+                        "We're handling a lot of requests right now. "
+                        "Please try again in 30–60 seconds — your conversation is saved."
+                    )
+                    intent_tag = "ERROR_RATE_LIMIT"
+                elif any(k in err_str for k in ("tool", "400", "validation", "failed to call", "function")):
+                    response = (
+                        "I wasn't able to complete that action. "
+                        "Could you rephrase your request and try again?"
+                    )
+                    intent_tag = "ERROR_TOOL"
+                elif any(k in err_str for k in ("timeout", "connection", "network", "ssl")):
+                    response = (
+                        "I'm having trouble connecting right now. "
+                        "Please try again in a moment."
+                    )
+                    intent_tag = "ERROR_NETWORK"
+                else:
+                    response = "I ran into an issue on my end. Please try again."
+                    intent_tag = "ERROR"
+
+                if _ADMIN_MODE:
+                    response += f"\n\n*(Admin: `{type(e).__name__}: {e}`)*"
+
                 side_effects = {"branch_results": [], "reservation": None,
                                 "user_profile": None, "experience_package": None}
-                turn_meta = {"intent": "ERROR", "slot_delta": {}, "turn_id": None}
+                turn_meta = {"intent": intent_tag, "slot_delta": {}, "turn_id": None}
 
         save_message(st.session_state.session_id, "assistant", response)
 
