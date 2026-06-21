@@ -1,7 +1,7 @@
 from config import get_db
 
 
-def get_user_profile(email, db_path=None):
+def get_user_profile(email=None, db_path=None):
     conn = get_db(db_path)
     cursor = conn.cursor()
 

@@ -274,9 +274,9 @@ def log_search_failure(**kwargs):
     input_schema={
         "type": "object",
         "properties": {
-            "email": {"type": "string"},
+            "email": {"type": ["string", "null"]},
         },
-        "required": ["email"],
+        "required": [],
     },
 )
 def get_user_profile(**kwargs):
